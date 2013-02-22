@@ -2,6 +2,8 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Implementation of the Snow Algorithm
@@ -14,16 +16,13 @@ public class Snow
 		ArrayList<String[]> data = getData
 			  ("/Users/Ethan/Dropbox/MLease/all_collected_data/" +
 			  "rte.standardized.tsv");
+		ArrayList<Map> priorsAndGold = makePriorsAndGold(data);
+	}
+
+	public static ArrayList<Map> makePriorsAndGold(ArrayList<String[]> data)
+	{
 
 		// TODO: this currently only works on binary data-sets, but it's extensible
-		// form a dynamic list of the questionIDs
-		/*
-			TODO: BETTER IMPLEMENTATION:
-			I would like to use an Object or something instead of this sloppy mess
-			of ArrayLists, but it seems like I'd need to know how many I'm going to
-			need beforehand...
-				OHHH! maybe I just need to use an ArrayList<QuestionIDs>!
-		 */
 		ArrayList<Integer> questionID = new ArrayList<Integer>();
 		ArrayList<Integer> qIdCount = new ArrayList<Integer>();
 		ArrayList<Integer> qIdYesCount = new ArrayList<Integer>();
@@ -53,13 +52,21 @@ public class Snow
 				}
 			}
 		}
+		ArrayList<Map> toReturn = new ArrayList<Map>();
 		for (int i = 0; i < questionID.size(); i++)
 		{
 			System.out.printf("QuestionID: %-8d", questionID.get(i));
 			System.out.printf("True Answer: %-6d", qIdGoldAns.get(i));
 			System.out.printf("Worker Answer: %-5.2f\n", (1.0 * qIdYesCount.get(i) /
 				  qIdCount.get(i)));
+			Map<String, Integer> question = new HashMap<String, Integer>();
+			question.put("questionID", questionID.get(i));
+			question.put("goldAnswer", qIdGoldAns.get(i));
+			question.put("workerBasedPriorX100",
+				  ((100 * qIdYesCount.get(i)) / qIdCount.get(i)));
+			toReturn.add(question);
 		}
+		return toReturn;
 	}
 
 	public static ArrayList<String[]> getData(String file) throws IOException
