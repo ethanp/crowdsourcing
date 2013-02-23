@@ -7,10 +7,9 @@ import java.util.Map;
 
 /**
  * Implementation of the Snow Algorithm
- * <p/>
  * TODO: this currently only works on binary data-sets, but it's extensible
  */
-public class Snow
+public class SnowWithObjects
 {
 	public static void main(String args[]) throws IOException
 	{
@@ -18,19 +17,21 @@ public class Snow
 		ArrayList<String[]> data = getData
 			  ("/Users/Ethan/Dropbox/MLease/all_collected_data/" +
 					"rte.standardized.tsv");
-		ArrayList<Map> priorsAndGold = makePriorsAndGold(data);
+		ArrayList<Question> questions = makeQuestions(data);
+		for (Question question : questions)
+			question.makePrior();
 		ArrayList<Map> confusionMatrices = makeConfusionMatrices(data);
 		ArrayList<Map> workerWeights = makeWorkerWeights(confusionMatrices);
 		ArrayList<Map> posteriorProbabilities = makePosteriorProbabilities
-			  (data, priorsAndGold, workerWeights);
+			  (data, questions, workerWeights);
 		return;
 	}
 
 	public static ArrayList<Map> makePosteriorProbabilities(ArrayList<String[]> data,
-		                                                    ArrayList<Map> priorsAndGold,
+	                                                        ArrayList<Question> questions,
 	                                                        ArrayList<Map> workerWeights)
 	{
-		for (Map<String, Integer> question : priorsAndGold)
+		for (Question question : questions)
 		{
 			break;
 		}
@@ -163,57 +164,42 @@ public class Snow
 		return workerMatrices;
 	}
 
-	public static ArrayList<Map> makePriorsAndGold(ArrayList<String[]> data)
+	public static ArrayList<Question> makeQuestions(ArrayList<String[]> data)
 	{
-		ArrayList<Integer> questionID = new ArrayList<Integer>();
-		ArrayList<Integer> qIdCount = new ArrayList<Integer>();
-		ArrayList<Integer> qIdYesCount = new ArrayList<Integer>();
-		ArrayList<Integer> qIdGoldAns = new ArrayList<Integer>();
-		int index, toIncrement;
+		ArrayList<Question> questionObjects = new ArrayList<Question>();
+		ArrayList<Integer> seenQuestions = new ArrayList<Integer>();
 		for (String[] dataPoint : data)
 		{
-			// If this Question hasn't been seen, initialize it
-			if ((index = questionID.indexOf(Integer.parseInt(dataPoint[2]))) == -1)
+			int workerJudgement = Integer.parseInt(dataPoint[3]);
+			int questionID = Integer.parseInt(dataPoint[2]);
+			String workerID = dataPoint[1];
+
+			// If this Question hasn't been seen, initialize a Question for it
+			if (!seenQuestions.contains(questionID))
 			{
-				questionID.add(Integer.parseInt(dataPoint[2]));
-				qIdCount.add((Integer) 1);
-				if (Integer.parseInt(dataPoint[3]) == 1)
-					qIdYesCount.add((Integer) 1);
-				else qIdYesCount.add((Integer) 0);
-				if (Integer.parseInt(dataPoint[4]) == 1)
-					qIdGoldAns.add((Integer) 1);
-				else qIdGoldAns.add((Integer) 0);
-			}
-			else
-			{
-				// Otherwise, just incorporate its data
-				toIncrement = qIdCount.remove(index) + 1;
-				qIdCount.add(index, toIncrement);
-				if (Integer.parseInt(dataPoint[3]) == 1)
+				int goldenJudgement = Integer.parseInt(dataPoint[4]);
+
+				// Make Question object and add it to the list
+				Question question = new Question(questionID, goldenJudgement);
+				question.addWorkerQ(workerID, workerJudgement);
+				questionObjects.add(question);
+
+				seenQuestions.add(questionID);
+
+			} else
+			{ // Otherwise add worker & judgement to the appropriate Question object
+				for (Question question : questionObjects)
 				{
-					toIncrement = qIdYesCount.remove(index) + 1;
-					qIdYesCount.add(index, toIncrement);
+					if (question.getQuestionID() == questionID)
+					{
+						question.addWorkerQ(workerID, workerJudgement);
+						break;
+					}
 				}
 			}
 		}
-		ArrayList<Map> toReturn = new ArrayList<Map>();
-		for (int i = 0; i < questionID.size(); i++)
-		{
-			// Print out the results
-//			System.out.printf("Question: %-8d", questionID.get(i));
-//			System.out.printf("True Answer: %-6d", qIdGoldAns.get(i));
-//			System.out.printf("Worker Answer: %-5.2f\n", (1.0 * qIdYesCount.get(i) /
-//				  qIdCount.get(i)));
 
-			// Put the results in an ArrayList of Maps to return
-			Map<String, Integer> question = new HashMap<String, Integer>();
-			question.put("questionID", questionID.get(i));
-			question.put("goldAnswer", qIdGoldAns.get(i));
-			question.put("workerBasedPriorX100",
-				  ((100 * qIdYesCount.get(i)) / qIdCount.get(i)));
-			toReturn.add(question);
-		}
-		return toReturn;
+		return questionObjects;
 	}
 
 	public static ArrayList<String[]> getData(String file) throws IOException
