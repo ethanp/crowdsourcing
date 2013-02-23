@@ -7,8 +7,8 @@ import java.util.Map;
 
 /**
  * Implementation of the Snow Algorithm
- * <p/>
- * TODO: this currently only works on binary data-sets, but it's extensible
+ * TODO: this currently only works on binary data-sets, but it should be extensible
+ *
  */
 public class Snow
 {
@@ -16,107 +16,109 @@ public class Snow
 	{
 		// get the file data formatted for use
 		ArrayList<String[]> data = getData
-			  ("/Users/Ethan/Dropbox/MLease/all_collected_data/" +
-					"rte.standardized.tsv");
-		ArrayList<Map> priorsAndGold = makePriorsAndGold(data);
-		ArrayList<Map> confusionMatrices = makeConfusionMatrices(data);
-		ArrayList<Map> workerWeights = makeWorkerWeights(confusionMatrices);
-		ArrayList<Map> posteriorProbabilities = makePosteriorProbabilities
-			  (data, priorsAndGold, workerWeights);
+			  ("/Users/Ethan/Dropbox/MLease/all_collected_data/rte.standardized.tsv");
+		ArrayList<Question> questions = makeQuestions(data);
+		for (Question question : questions)
+			question.makePrior();
+		Map<String, Map> workers = makeWorkers(data);
+		makePosteriorProbs(data, questions, workers);
+		printItAllOut(questions);
 		return;
 	}
 
-	public static ArrayList<Map> makePosteriorProbabilities(ArrayList<String[]> data,
-		                                                    ArrayList<Map> priorsAndGold,
-	                                                        ArrayList<Map> workerWeights)
+	public static void printItAllOut(ArrayList<Question> questions)
 	{
-		for (Map<String, Integer> question : priorsAndGold)
-		{
-			break;
+		for (Question question : questions) {
+			System.out.printf("Question ID: %-8d", question.questionID);
+			System.out.printf("GoldSays: %-4d", question.goldenJudgement);
+			System.out.printf("Prior: %-8.1f", question.prior);
+			System.out.printf("ClassifierSays: %-8.3f\n", question.finalScore);
 		}
-		return null;
+
+		int correctBefore = 0;
+		int correctAfter = 0;
+		for (Question question : questions) {
+			if (   (question.prior < .5 && question.goldenJudgement == 0)
+				  || (question.prior >= .5 && question.goldenJudgement == 1)) {
+				correctBefore++;
+			}
+			if (   (question.finalScore < 0 && question.goldenJudgement == 0)
+			    || (question.finalScore >= 0 && question.goldenJudgement == 1)) {
+				correctAfter++;
+			}
+		}
+		System.out.printf("\n\nCorrect Before Fancy Maths: %d, or %3.1f%%\n\n" +
+			                  "Correct After:              %d, or %3.1f%%\n",
+			  correctBefore, 100.0 * correctBefore / questions.size(),
+			  correctAfter, 100.0 * correctAfter / questions.size());
 	}
 
-	public static ArrayList<Map> makeWorkerWeights(ArrayList<Map> confusionMatrices)
+	public static void makePosteriorProbs(ArrayList<String[]> data,
+	                                                ArrayList<Question> questions,
+	                                                Map<String, Map> workers)
 	{
-		ArrayList<Map> workerWeights = new ArrayList<Map>();
-		for (Map<String, Integer> worker : confusionMatrices)
+		for (Question question : questions)
 		{
-			// retrieve matrix
-			int yesGivYes = worker.get("yesGivYes");
-			int noGivYes = worker.get("noGivYes");
-			int yesGivNo = worker.get("yesGivNo");
-			int noGivNo = worker.get("noGivNo");
-
-			// calculate probabilities
-			double probWorkerYesGivenYes = ((double) yesGivYes) / (yesGivYes + noGivYes);
-			double probWorkerYesGivenNo = ((double) yesGivNo) / (yesGivNo + noGivNo);
-
-			// store probabilities
-			Map<String, Double> workerWeight = new HashMap<String, Double>();
-			workerWeight.put("probWorkerYesGivenYes", probWorkerYesGivenYes);
-			workerWeight.put("probWorkerYesGivenNo", probWorkerYesGivenNo);
-			workerWeights.add(workerWeight);
+			double accumulator = Math.log(question.prior / (1 - question.prior));
+			for (String workerID : question.workerQs.keySet())
+			{
+				Map<String, Double> workerWeightMap = workers.get(workerID);
+				int workersResponse = question.workerQs.get(workerID);
+				double numerator = workerWeightMap.get("probWorkerYesGivenYes");
+				double denominator = workerWeightMap.get("probWorkerYesGivenNo");
+				if (workersResponse == 1) {
+					accumulator += Math.log(numerator / denominator);
+				} else {
+					accumulator += Math.log((1 - numerator) / (1 - denominator));
+				}
+			}
+			question.finalScore = accumulator;
 		}
-		return workerWeights;
 	}
 
-	public static ArrayList<Map> makeConfusionMatrices(ArrayList<String[]> data)
+	public static Map<String, Map> makeWorkers(ArrayList<String[]> data)
 	{
 		/*
 		   Make all the confusion matrices with the following format:
-			Index -> index in workerID array, so it is unique for each worker
 			yesGivYes -> Count(votedYes & goldYes)
 			noGivYes  -> Count(votedNo  & goldYes)
 			yesGivNo  -> Count(votedYes & goldNo )
 			noGivNo   -> Count(votedNo  & goldNo )
  		 */
-		// Put all the workers in a list
-		ArrayList<String> workerID = new ArrayList<String>();
+		// Put all initialized workers in a list
+		Map<String, Map> workersMap = new HashMap<String, Map>();
 		// Put all the matrices in a list
-		ArrayList<Map> workerMatrices = new ArrayList<Map>();
 		int addIndex = 0, index, currentValue;
 		for (String[] dataPoint : data)
 		{
-			// worker doesn't already exist, initialize them,
+			String workerIDString = dataPoint[1];
+			// workerMatrix doesn't already exist, initialize it,
 			// Note: Laplace smoothing is built-in here
-			if ((index = workerID.indexOf(dataPoint[1])) == -1)
+			if (!workersMap.containsKey(workerIDString))
 			{
-				workerID.add(dataPoint[1]);
-				Map<String, Integer> workerMatrix = new HashMap<String,
-					  Integer>();
-				workerMatrix.put("Index", addIndex++);
+				Map<String, Integer> workerMatrix = new HashMap<String, Integer>();
 				// if they voted Yes
-				if (dataPoint[3].equals("1"))
-				{
+				if (dataPoint[3].equals("1")) {
 					// gold voted Yes
-					if (dataPoint[4].equals("1"))
-					{
+					if (dataPoint[4].equals("1")) {
 						workerMatrix.put("yesGivYes", 2);
 						workerMatrix.put("noGivYes", 1);
 						workerMatrix.put("yesGivNo", 1);
 						workerMatrix.put("noGivNo", 1);
-					}
-					else
-					{ // gold voted No
+					} else { // gold voted No
 						workerMatrix.put("yesGivYes", 1);
 						workerMatrix.put("noGivYes", 1);
 						workerMatrix.put("yesGivNo", 2);
 						workerMatrix.put("noGivNo", 1);
 					}
-				}
-				else
-				{
+				} else {
 					// they voted No, gold voted Yes
-					if (dataPoint[4].equals("1"))
-					{
+					if (dataPoint[4].equals("1")) {
 						workerMatrix.put("yesGivYes", 1);
 						workerMatrix.put("noGivYes", 2);
 						workerMatrix.put("yesGivNo", 1);
 						workerMatrix.put("noGivNo", 1);
-					}
-					else
-					{
+					} else {
 						// gold voted No
 						workerMatrix.put("yesGivYes", 1);
 						workerMatrix.put("noGivYes", 1);
@@ -124,96 +126,87 @@ public class Snow
 						workerMatrix.put("noGivNo", 2);
 					}
 				}
-				workerMatrices.add(workerMatrix);
-			}
-			else
-			{ // worker does already exist, update them
-				Map<String, Integer> currentMatrix = workerMatrices.get(index);
-				if (dataPoint[3].equals("1"))
-				{
+				workersMap.put(workerIDString, workerMatrix);
+			} else { // worker does already exist, update them
+				Map<String, Integer> workerMatrix = workersMap.get(workerIDString);
+				if (dataPoint[3].equals("1")) {
 					// gold voted Yes
-					if (dataPoint[4].equals("1"))
-					{
-						currentValue = currentMatrix.remove("yesGivYes") + 1;
-						currentMatrix.put("yesGivYes", currentValue);
+					if (dataPoint[4].equals("1")) {
+						currentValue = workerMatrix.remove("yesGivYes") + 1;
+						workerMatrix.put("yesGivYes", currentValue);
+					} else { // gold voted No
+						currentValue = workerMatrix.remove("yesGivNo") + 1;
+						workerMatrix.put("yesGivNo", currentValue);
 					}
-					else
-					{ // gold voted No
-						currentValue = currentMatrix.remove("yesGivNo") + 1;
-						currentMatrix.put("yesGivNo", currentValue);
-					}
-				}
-				else
-				{
+				} else {
 					// they voted No, gold voted Yes
-					if (dataPoint[4].equals("1"))
-					{
-						currentValue = currentMatrix.remove("noGivYes") + 1;
-						currentMatrix.put("noGivYes", currentValue);
-					}
-					else
-					{
+					if (dataPoint[4].equals("1")) {
+						currentValue = workerMatrix.remove("noGivYes") + 1;
+						workerMatrix.put("noGivYes", currentValue);
+					} else {
 						// gold voted No
-						currentValue = currentMatrix.remove("noGivNo") + 1;
-						currentMatrix.put("noGivNo", currentValue);
+						currentValue = workerMatrix.remove("noGivNo") + 1;
+						workerMatrix.put("noGivNo", currentValue);
 					}
 				}
 			}
 		}
-		return workerMatrices;
+		Map<String, Map> workers = new HashMap<String, Map>();
+		for (String workerID : workersMap.keySet())
+		{
+			// retrieve matrix
+			Integer yesGivYes = (Integer) workersMap.get(workerID).get("yesGivYes");
+			Integer noGivYes = (Integer) workersMap.get(workerID).get("noGivYes");
+			Integer yesGivNo = (Integer) workersMap.get(workerID).get("yesGivNo");
+			Integer noGivNo = (Integer) workersMap.get(workerID).get("noGivNo");
+
+			// calculate probabilities
+			double probWorkerYesGivenYes = ((double) yesGivYes) / (yesGivYes + noGivYes);
+			double probWorkerYesGivenNo = ((double) yesGivNo) / (yesGivNo + noGivNo);
+
+			// store probabilities
+			Map<String, Double> workerWeights = new HashMap<String, Double>();
+			workerWeights.put("probWorkerYesGivenYes", probWorkerYesGivenYes);
+			workerWeights.put("probWorkerYesGivenNo", probWorkerYesGivenNo);
+			workers.put(workerID, workerWeights);
+		}
+		return workers;
 	}
 
-	public static ArrayList<Map> makePriorsAndGold(ArrayList<String[]> data)
+	public static ArrayList<Question> makeQuestions(ArrayList<String[]> data)
 	{
-		ArrayList<Integer> questionID = new ArrayList<Integer>();
-		ArrayList<Integer> qIdCount = new ArrayList<Integer>();
-		ArrayList<Integer> qIdYesCount = new ArrayList<Integer>();
-		ArrayList<Integer> qIdGoldAns = new ArrayList<Integer>();
-		int index, toIncrement;
+		ArrayList<Question> questionObjects = new ArrayList<Question>();
+		ArrayList<Integer> seenQuestions = new ArrayList<Integer>();
 		for (String[] dataPoint : data)
 		{
-			// If this Question hasn't been seen, initialize it
-			if ((index = questionID.indexOf(Integer.parseInt(dataPoint[2]))) == -1)
+			int workerJudgement = Integer.parseInt(dataPoint[3]);
+			int questionID = Integer.parseInt(dataPoint[2]);
+			String workerID = dataPoint[1];
+
+			// If this Question hasn't been seen, initialize a Question for it
+			if (!seenQuestions.contains(questionID))
 			{
-				questionID.add(Integer.parseInt(dataPoint[2]));
-				qIdCount.add((Integer) 1);
-				if (Integer.parseInt(dataPoint[3]) == 1)
-					qIdYesCount.add((Integer) 1);
-				else qIdYesCount.add((Integer) 0);
-				if (Integer.parseInt(dataPoint[4]) == 1)
-					qIdGoldAns.add((Integer) 1);
-				else qIdGoldAns.add((Integer) 0);
-			}
-			else
-			{
-				// Otherwise, just incorporate its data
-				toIncrement = qIdCount.remove(index) + 1;
-				qIdCount.add(index, toIncrement);
-				if (Integer.parseInt(dataPoint[3]) == 1)
-				{
-					toIncrement = qIdYesCount.remove(index) + 1;
-					qIdYesCount.add(index, toIncrement);
+				int goldenJudgement = Integer.parseInt(dataPoint[4]);
+
+				// Make Question object and add it to the list
+				Question question = new Question(questionID, goldenJudgement);
+				question.addWorkerQ(workerID, workerJudgement);
+				questionObjects.add(question);
+
+				seenQuestions.add(questionID);
+
+			} else {
+			// Otherwise add worker & judgement to the appropriate Question object
+				for (Question question : questionObjects) {
+					if (question.questionID == questionID) {
+						question.addWorkerQ(workerID, workerJudgement);
+						break;
+					}
 				}
 			}
 		}
-		ArrayList<Map> toReturn = new ArrayList<Map>();
-		for (int i = 0; i < questionID.size(); i++)
-		{
-			// Print out the results
-//			System.out.printf("Question: %-8d", questionID.get(i));
-//			System.out.printf("True Answer: %-6d", qIdGoldAns.get(i));
-//			System.out.printf("Worker Answer: %-5.2f\n", (1.0 * qIdYesCount.get(i) /
-//				  qIdCount.get(i)));
 
-			// Put the results in an ArrayList of Maps to return
-			Map<String, Integer> question = new HashMap<String, Integer>();
-			question.put("questionID", questionID.get(i));
-			question.put("goldAnswer", qIdGoldAns.get(i));
-			question.put("workerBasedPriorX100",
-				  ((100 * qIdYesCount.get(i)) / qIdCount.get(i)));
-			toReturn.add(question);
-		}
-		return toReturn;
+		return questionObjects;
 	}
 
 	public static ArrayList<String[]> getData(String file) throws IOException
@@ -222,8 +215,7 @@ public class Snow
 		ArrayList<String[]> fileList = new ArrayList<String[]>();
 		BufferedReader br = new BufferedReader(new FileReader(file));
 		String line;
-		while ((line = br.readLine()) != null)
-		{
+		while ((line = br.readLine()) != null) {
 			// break the line into its constituent pieces
 			String[] columns = new String[5];
 			columns = line.split("\t");
