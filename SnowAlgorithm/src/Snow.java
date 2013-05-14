@@ -156,13 +156,13 @@ public class Snow
 		{
 			// retrieve matrix
 			Integer yesGivYes = (Integer) workersMap.get(workerID).get("yesGivYes");
-			Integer noGivYes = (Integer) workersMap.get(workerID).get("noGivYes");
-			Integer yesGivNo = (Integer) workersMap.get(workerID).get("yesGivNo");
-			Integer noGivNo = (Integer) workersMap.get(workerID).get("noGivNo");
+			Integer noGivYes  = (Integer) workersMap.get(workerID).get("noGivYes");
+			Integer yesGivNo  = (Integer) workersMap.get(workerID).get("yesGivNo");
+			Integer noGivNo   = (Integer) workersMap.get(workerID).get("noGivNo");
 
 			// calculate probabilities
 			double probWorkerYesGivenYes = ((double) yesGivYes) / (yesGivYes + noGivYes);
-			double probWorkerYesGivenNo = ((double) yesGivNo) / (yesGivNo + noGivNo);
+			double probWorkerYesGivenNo  = ((double) yesGivNo)  / (yesGivNo + noGivNo);
 
 			// store probabilities
 			Map<String, Double> workerWeights = new HashMap<String, Double>();
