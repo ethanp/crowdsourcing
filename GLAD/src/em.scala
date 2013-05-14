@@ -40,8 +40,10 @@ object em {
     // set as 0.5 by file
     var priorZ1 = Array[Double]()
 
-    // zero for both intents and purposes
+    // for both intents and purposes
     val THRESHOLD: Double = 1E-5
+    val INFINITY: Double  = java.lang.Double.POSITIVE_INFINITY
+    // TODO java.lang.Double.MAX_VALUE ?? What's the difference?
 
     def eStep() {
 
@@ -71,17 +73,84 @@ object em {
 
     def logProbL (l: Int, z: Int, alphaI: Double, betaJ: Double) = {
         if (z == l)
-            0 - log(1 + exp(0 - exp(betaJ) * alphaI))
+            0 - log(1 + exp(- exp(betaJ) * alphaI))
         else
             0 - log(1 + exp(exp(betaJ) * alphaI))
     }
 
-    def computeQ() = {
+    // TODO not sure this is correct
+    def zScore(x: Double) = 1/sqrt(2*Pi) * exp(-pow(x,2)/2)
+
+    def computeQ(): Double = {
+
+        /* "Start with the expectation of the sum of priors over all images" */
         var Q = probZ1.map(x => x * log(x)).sum
         Q += probZ0.map(x => x * log(1 - x)).sum
 
+        for (label <- labels) {
+            val i = label.labelerId
+            val j = label.imageIdx
+            val lij = label.label
 
-        Q
+            /* "Do some analytic manipulation first for numerical stability!" */
+            var logSigma = -log(1 + exp(-exp(beta(j)) * alpha(i)))
+
+            if (logSigma.isNegInfinity)          // TODO no idea if this works
+                logSigma = exp(beta(j)) * alpha(i)
+
+
+            var logOneMinusSigma = - log(1 + exp(exp(beta(j))* alpha(i)))
+
+            if (logOneMinusSigma.isNegInfinity)  // TODO no idea if this works
+                logOneMinusSigma = -exp(beta(j)) * alpha(i)
+
+            Q += probZ1(j) * (lij * logSigma + (1 - lij) * logOneMinusSigma) +
+                    probZ0(j) * ((1 - lij) * logSigma + lij * logOneMinusSigma)
+        }
+        /* Add Gaussian (standard normal) prior for alpha */
+        for (i <- 0 until numLabelers)
+            Q += log(zScore(alpha(i) - priorAlpha(i)))
+
+        /* Add Gaussian (standard normal) prior for beta */
+        for (j <- 0 until numImages)
+            Q += log(zScore(beta(j) - priorBeta(j)))
+
+        return Q
+    }
+
+    def logistic(x: Double) = 1.0 / (1 + exp(-x))
+
+    def computeLikelihood(): Double = {
+        var L = 0.0
+
+        for (j <- 0 until numImages) {
+            var P1 = priorZ1(j)
+            var P0 = 1 - priorZ1(j)
+            for (idx <- 0 until numLabels) {
+                if (labels(idx).imageIdx == j) {
+                    val i = labels(idx).labelerId
+                    val lij = labels(idx).label
+                    val sigma = logistic(exp(beta(j)) * alpha(i))
+                    P1 *= pow(sigma, lij) * pow(1 - sigma, 1 - lij)
+                    P0 *= pow(sigma, 1 - lij) * pow(1 - sigma, lij)
+                }
+            }
+            L += log(P1 + P0)
+        }
+
+        /* Add Gaussian (standard normal) prior for alpha */
+        for (i <- 0 until numLabelers)
+            L += log(zScore(alpha(i) - priorAlpha(i)))
+
+        /* Add Gaussian (standard normal) prior for beta */
+        for (j <- 0 until numImages)
+            L += log(zScore(beta(j) - priorBeta(j)))
+
+        return L
+    }
+
+    def MStep () {
+        
     }
 
     def EM () {
@@ -94,6 +163,24 @@ object em {
         var Q = 0.0
         eStep()
         Q = computeQ()
+        printf("Q = %f\n", Q)
+        var lastQ = Q
+        do {
+            lastQ = Q
+            /* Re-estimate P(Z|L,alpha,beta) */
+            eStep()
+            Q = computeQ()
+            println("\nAfter E-Step:")
+            printf("Q = %f; L = %f\n", Q, computeLikelihood())
+
+            /*outputResults(data) [not implemented]*/
+            MStep()
+
+            Q = computeQ()
+            printf("\nAfter M-Step:\n")
+            printf("Q = %f; L = %f\n", Q, computeLikelihood())
+            printf("difference is %.7f\n\n", abs((Q-lastQ)/lastQ))
+        } while (abs((Q-lastQ)/lastQ) > THRESHOLD)
     }
     def main(args: Array[String]) {
         println("hello world")
