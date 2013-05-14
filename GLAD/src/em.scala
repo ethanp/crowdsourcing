@@ -11,8 +11,7 @@ class Label {
     var label     = 0
 }
 
-class em {
-
+object em {
     /* read in from main of file */
     val labels = new ArrayBuffer[Label]()
 
@@ -38,28 +37,28 @@ class em {
 
     // set as 0.5 by file
     var priorZ1 = Array[Double]()
-}
 
-object em {
+    def EM () {
+        println("sumthin")
+    }
     def main(args: Array[String]) {
         println("hello world")
 
         /* Read Data */
         val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"
         val lines = Source.fromFile(dataLocation).getLines()
-        val runIt = new em()
         val something = lines.next().split(" ")
 
         // extract metadata from first line
-        runIt.numLabels   = something(0).toInt
-        runIt.numLabelers = something(1).toInt
-        runIt.numImages   = something(2).toInt
-        runIt.forPriorZ1  = something(3).toDouble
+        numLabels   = something(0).toInt
+        numLabelers = something(1).toInt
+        numImages   = something(2).toInt
+        forPriorZ1  = something(3).toDouble
 
         // initialize priors
-        runIt.priorAlpha = Array.fill[Double](runIt.numLabelers)(1.0)
-        runIt.priorBeta  = Array.fill[Double](runIt.numImages)(1.0)
-        runIt.priorZ1    = Array.fill[Double](runIt.numImages)(runIt.forPriorZ1)
+        priorAlpha = Array.fill[Double](numLabelers)(1.0)
+        priorBeta  = Array.fill[Double](numImages)(1.0)
+        priorZ1    = Array.fill[Double](numImages)(forPriorZ1)
 
         // read in the data
         for(line <- lines) {
@@ -68,10 +67,10 @@ object em {
             label.imageIdx = lineData(0).toInt
             label.labelerId = lineData(1).toInt
             label.label = lineData(2).toInt
-            runIt.labels += label
+            labels += label
         }
 
         /* Run EM */
-        
+        em.EM()
     }
 }
