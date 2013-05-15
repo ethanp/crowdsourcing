@@ -1,6 +1,7 @@
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 import math._
+import org.apache.commons.math3.optim.nonlinear.vector.MultivariateVectorOptimizer._
 
 /** TODO: Make it MultiClass */
 /* TODO when debugging, he has a lot of builtin printf's I can utilize */
@@ -36,8 +37,8 @@ object em {
     var probZ0 = Array[Double]()
 
     // from M-step
-    val alpha = Array[Double]()
-    val beta  = Array[Double]()
+    var alpha = Array[Double]()
+    var beta  = Array[Double]()
 
     // set as 0.5 by file
     var priorZ1 = Array[Double]()
@@ -70,14 +71,14 @@ object em {
         }
     }
 
-    def logProbL (l: Int, z: Int, alphaI: Double, betaJ: Double) = {
+    def logProbL (l: Int, z: Int, alphaI: Double, betaJ: Double): Double = {
         if (z == l)
             0 - log(1 + exp(- exp(betaJ) * alphaI))
         else
             0 - log(1 + exp(exp(betaJ) * alphaI))
     }
 
-    def zScore(x: Double) = 1/sqrt(2*Pi) * exp(-pow(x,2)/2)
+    def zScore(x: Double): Double = 1/sqrt(2*Pi) * exp(-pow(x,2)/2)
 
     def computeQ(): Double = {
 
@@ -136,8 +137,10 @@ object em {
         return Q
     }
 
-    def logistic(x: Double) = 1.0 / (1 + exp(-x))
+    def logistic(x: Double): Double = 1.0 / (1 + exp(-x))
 
+    /* The Likelihood is not used by the model in determining values this method
+        is simply there to increase awareness of how the model is performing */
     def computeLikelihood(): Double = {
         var L = 0.0
 
@@ -156,47 +159,59 @@ object em {
             L += log(P1 + P0)
         }
 
-        /* Add Gaussian (standard normal) prior for alpha */
+        /* Add Gaussian (standard normal) prior for alpha and beta */
         for (i <- 0 until numLabelers)
             L += log(zScore(alpha(i) - priorAlpha(i)))
-
-        /* Add Gaussian (standard normal) prior for beta */
         for (j <- 0 until numImages)
             L += log(zScore(beta(j) - priorBeta(j)))
 
         return L
     }
 
-    /* "PackX" into vector, first alphas, then betas */
-    def packX(vector: Array[Double]) {
+    /* "packX" into vector, first alphas, then betas */
+    def pack(vector: Array[Double]) {
         for (i <- 0 until numLabelers)
             vector(i) = alpha(i)
         for (j <- numLabelers until numLabelers + numImages)
-            vector(j) = beta(j)
+            vector(j) = beta(j-numLabelers)
+    }
+
+    /* "unpackX" from vector into alpha and beta arrays */
+    def unpack(vector: Array[Double]) {
+        for (i <- 0 until numLabelers)
+            alpha(i) = vector(i)
+        for (j <- numLabelers until numLabelers + numImages)
+            beta(j-numLabelers) = vector(j)
     }
 
     def MStep () {
-        val vector = Array[Double](numLabelers + numImages)
-        packX(vector)
+        val vector = new Array[Double](numLabelers + numImages)
+        pack(vector)
+
     }
 
     def EM () {
         println("sum thin")
 
         /* initialize starting values */
-        priorAlpha copyToArray alpha
+        alpha = priorAlpha.map(x => x)
+        beta = priorBeta.map(x => x)
+
+        /* THESE DIDN'T DO IT
+        priorAlpha.copyToArray(alpha)
         priorBeta copyToArray beta
+        */
 
         var Q = 0.0
         var lastQ = 0.0
 
-        eStep()         // not sure why these
-        Q = computeQ()  // 2 lines are in here
+        eStep()         // not sure why these 2 lines are in here,
+        Q = computeQ()  // they are repeated in the loop
 
         printf("Q = %f\n", Q)
         do {
             lastQ = Q
-            /* "Re-estimate P(Z|L,alpha,beta)" */ // <-- Why so soon?
+            /* "Re-estimate P(Z|L,alpha,beta)" */
             eStep()
             Q = computeQ()
             println("\nAfter E-Step:")
@@ -241,6 +256,6 @@ object em {
         }
 
         /* Run EM */
-        em.EM()
+        EM()
     }
 }
