@@ -2,6 +2,8 @@ import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 import math._
 
+/** TODO: Make it MultiClass */
+/* TODO when debugging, he has a lot of builtin printf's I can utilize */
 
 class Label {
     var imageIdx  = 0
@@ -42,8 +44,6 @@ object em {
 
     // for both intents and purposes
     val THRESHOLD: Double = 1E-5
-    val INFINITY: Double  = java.lang.Double.POSITIVE_INFINITY
-    // TODO java.lang.Double.MAX_VALUE ?? What's the difference?
 
     def eStep() {
 
@@ -53,11 +53,10 @@ object em {
         probZ0 = priorZ1.map(1 - log(_))
 
         for (label <- labels) {
-            val i = label.labelerId
-            val j = label.imageIdx
+            val i   = label.labelerId
+            val j   = label.imageIdx
             val lij = label.label
 
-            // TODO I think this is what needs to be MULTICLASS
             probZ1(j) += logProbL(lij, 1, alpha(i), beta(j))
             probZ0(j) += logProbL(lij, 0, alpha(i), beta(j))
         }
@@ -78,40 +77,59 @@ object em {
             0 - log(1 + exp(exp(betaJ) * alphaI))
     }
 
-    // TODO not sure this is correct
     def zScore(x: Double) = 1/sqrt(2*Pi) * exp(-pow(x,2)/2)
 
     def computeQ(): Double = {
 
-        /* "Start with the expectation of the sum of priors over all images" */
-        var Q = probZ1.map(x => x * log(x)).sum
-        Q += probZ0.map(x => x * log(1 - x)).sum
+        var Q = 0.0
 
+        /* "Start with the expectation of the sum of priors over all images" */
+        // first line of pg. 2: SS{ p(k) * ln(p(z)) }
+        for (j <- 0 until numImages) {
+            Q += probZ1(j) * log(priorZ1(j))
+            Q += probZ0(j) * log(1 - priorZ1(j))
+        }
+
+        // second line of pg. 2: SS{ p(k) * ln(p(l|z,a,b)) }
         for (label <- labels) {
-            val i = label.labelerId
-            val j = label.imageIdx
+            val i   = label.labelerId
+            val j   = label.imageIdx
             val lij = label.label
 
             /* "Do some analytic manipulation first for numerical stability!" */
+            // the supp. calls this "ln\sigma"
             var logSigma = -log(1 + exp(-exp(beta(j)) * alpha(i)))
 
-            if (logSigma.isNegInfinity)          // TODO no idea if this works
+            /* NOTE: "WHY THE IF"
+             * this would be neg-infinity if exp(-exp(beta(j)) * alpha(i))) ~= infinity
+             * which would happen if alpha_i < 0 && beta_j > 4-ish
+             * which would happen if it was a nefarious rater on an easy picture
+             * e.g. using alpha,beta = -5,5 = e^(5e^5) = 1.9 E 322 !
+             * a bad PLOT can be found here:
+             * http://www.wolframalpha.com/input/?i=exp%28-exp%28x%29*y%29+with+x+from+0+to+10%2C+y+from+-10+to+1
+             * The idea is that we're replacing it with e^b * a; IDK why they chose that,
+             * but anyways that replacement would still be negative, but with
+             * a much smaller absolute value
+             */
+            if (logSigma isNegInfinity)
                 logSigma = exp(beta(j)) * alpha(i)
 
 
-            var logOneMinusSigma = - log(1 + exp(exp(beta(j))* alpha(i)))
+            var logOneMinusSigma = -log( 1 + exp( exp(beta(j)) * alpha(i) ) )
 
-            if (logOneMinusSigma.isNegInfinity)  // TODO no idea if this works
+            // see NOTE above, except now it's for /positive/ alpha_i
+            if (logOneMinusSigma isNegInfinity)
                 logOneMinusSigma = -exp(beta(j)) * alpha(i)
 
+            // from the final formulation of Q(a,b), midway down pg. 2
             Q += probZ1(j) * (lij * logSigma + (1 - lij) * logOneMinusSigma) +
                     probZ0(j) * ((1 - lij) * logSigma + lij * logOneMinusSigma)
         }
-        /* Add Gaussian (standard normal) prior for alpha */
+
+        // this isn't specified by the model, but seemed like a good idea to the authors:
+        /* Add Gaussian (standard normal) prior for alpha and beta*/
         for (i <- 0 until numLabelers)
             Q += log(zScore(alpha(i) - priorAlpha(i)))
-
-        /* Add Gaussian (standard normal) prior for beta */
         for (j <- 0 until numImages)
             Q += log(zScore(beta(j) - priorBeta(j)))
 
@@ -149,8 +167,17 @@ object em {
         return L
     }
 
+    /* "PackX" into vector, first alphas, then betas */
+    def packX(vector: Array[Double]) {
+        for (i <- 0 until numLabelers)
+            vector(i) = alpha(i)
+        for (j <- numLabelers until numLabelers + numImages)
+            vector(j) = beta(j)
+    }
+
     def MStep () {
-        
+        val vector = Array[Double](numLabelers + numImages)
+        packX(vector)
     }
 
     def EM () {
@@ -161,13 +188,15 @@ object em {
         priorBeta copyToArray beta
 
         var Q = 0.0
-        eStep()
-        Q = computeQ()
+        var lastQ = 0.0
+
+        eStep()         // not sure why these
+        Q = computeQ()  // 2 lines are in here
+
         printf("Q = %f\n", Q)
-        var lastQ = Q
         do {
             lastQ = Q
-            /* Re-estimate P(Z|L,alpha,beta) */
+            /* "Re-estimate P(Z|L,alpha,beta)" */ // <-- Why so soon?
             eStep()
             Q = computeQ()
             println("\nAfter E-Step:")
