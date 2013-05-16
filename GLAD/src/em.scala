@@ -188,13 +188,14 @@ object em {
             ascend(stepSize)
             Q = computeQ()
             iteration += 1
-        } while (iteration < iterations && abs(oldQ - Q) > tolerance)
+        } while (iteration < iterations && Q - oldQ > tolerance)
     }
 
     def MStep () {
         printf("Before GradientAscent Q = %f\n", computeQ())
 
         // the algorithm is very sensitive to the settings of these parameters
+        // I have found that (25, .001, .01) works well and matches the given output
         doGradientAscent(25, .001, .01)
 
         printf("After GradientAscent Q = %f\n", computeQ())
