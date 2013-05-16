@@ -1,7 +1,6 @@
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 import math._
-import org.apache.commons.math3.optim.nonlinear.vector.MultivariateVectorOptimizer._
 
 /** TODO: Make it MultiClass */
 /* TODO when debugging, he has a lot of builtin printf's I can utilize */
@@ -39,6 +38,10 @@ object em {
     // from M-step
     var alpha = Array[Double]()
     var beta  = Array[Double]()
+    var dQdAlpha = Array[Double]()
+    var dQdBeta = Array[Double]()
+    var vectorAB = Array[Double]()
+    var vectorGrad = Array[Double]()
 
     // set as 0.5 by file
     var priorZ1 = Array[Double]()
@@ -168,26 +171,77 @@ object em {
         return L
     }
 
-    /* "packX" into vector, first alphas, then betas */
-    def pack(vector: Array[Double]) {
+    def ascend(stepSize: Double) {
         for (i <- 0 until numLabelers)
-            vector(i) = alpha(i)
-        for (j <- numLabelers until numLabelers + numImages)
-            vector(j) = beta(j-numLabelers)
+            alpha(i) += stepSize * dQdAlpha(i)
+        for (j <- 0 until numImages)
+            beta(j) += stepSize * dQdBeta(j)
     }
 
-    /* "unpackX" from vector into alpha and beta arrays */
-    def unpack(vector: Array[Double]) {
-        for (i <- 0 until numLabelers)
-            alpha(i) = vector(i)
-        for (j <- numLabelers until numLabelers + numImages)
-            beta(j-numLabelers) = vector(j)
+    def doGradientAscent(iterations: Int, stepSize: Double, tolerance: Double) {
+        var iteration = 0
+        var oldQ = computeQ()
+        var Q = oldQ
+        do {
+            oldQ = Q
+            calcGradientComponents()
+            ascend(stepSize)
+            Q = computeQ()
+            iteration += 1
+        } while (iteration < iterations && abs(oldQ - Q) > tolerance)
     }
 
     def MStep () {
-        val vector = new Array[Double](numLabelers + numImages)
-        pack(vector)
+        printf("Before GradientAscent Q = %f\n", computeQ())
 
+        // the algorithm is very sensitive to the settings of these parameters
+        doGradientAscent(25, .001, .01)
+
+        printf("After GradientAscent Q = %f\n", computeQ())
+    }
+
+    // TODO This is NOT quite the formula they worked out in the notes !!
+    // I'm going to use it anyway; to change it to their derivation would be easy
+    def calcGradientComponents () {
+
+        // Where did this part come from?
+        for (i <- 0 until numLabelers)
+            dQdAlpha(i) = alpha(i) - priorAlpha(i)
+        for (j <- 0 until numImages)
+            dQdBeta(j) = beta(j) - priorBeta(j)
+
+        // Why isn't it this?:
+        /*
+        for (i <- 0 until numLabelers)
+            dQdAlpha(i) = 0.0
+        for (j <- 0 until numImages)
+            dQdBeta(j) = 0.0
+        */
+
+        for (label <- labels) {
+            val i     = label.labelerId
+            val j     = label.imageIdx
+            val lij   = label.label
+            val sigma = logistic(exp(beta(j)) * alpha(i))
+
+            // What is this?
+            dQdAlpha(i) += (probZ1(j) * (lij - sigma) +
+                                probZ0(j) * (1 - lij - sigma)) * exp(beta(j))
+            dQdBeta(j) += (probZ1(j) * (lij - sigma) +
+                                probZ0(j) * (1 - lij - sigma)) * alpha(i) * exp(beta(j))
+        }
+    }
+
+    def outputResults() {
+
+        for (i <- 0 until numLabelers)
+            printf("Alpha[%d] = %f\n", i, alpha(i))
+
+        for (j <- 0 until numImages)
+            printf("Beta[%d] = %f\n", j, exp(beta(j)))
+
+        for (j <- 0 until numImages)
+            printf("P(Z(%d)=1) = %f\n", j, probZ1(j))
     }
 
     def EM () {
@@ -196,11 +250,8 @@ object em {
         /* initialize starting values */
         alpha = priorAlpha.map(x => x)
         beta = priorBeta.map(x => x)
-
-        /* THESE DIDN'T DO IT
-        priorAlpha.copyToArray(alpha)
-        priorBeta copyToArray beta
-        */
+        dQdAlpha = new Array[Double](numLabelers)
+        dQdBeta = new Array[Double](numImages)
 
         var Q = 0.0
         var lastQ = 0.0
@@ -225,6 +276,8 @@ object em {
             printf("Q = %f; L = %f\n", Q, computeLikelihood())
             printf("difference is %.7f\n\n", abs((Q-lastQ)/lastQ))
         } while (abs((Q-lastQ)/lastQ) > THRESHOLD)
+
+        outputResults()
     }
     def main(args: Array[String]) {
         println("hello world")
@@ -244,6 +297,8 @@ object em {
         priorAlpha = Array.fill[Double](numLabelers)(1.0)
         priorBeta  = Array.fill[Double](numImages)(1.0)
         priorZ1    = Array.fill[Double](numImages)(forPriorZ1)
+        vectorAB = new Array[Double](numLabelers + numImages)
+        vectorGrad = new Array[Double](numLabelers + numImages)
 
         // read in the data
         for(line <- lines) {
