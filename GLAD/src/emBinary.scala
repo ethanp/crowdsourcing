@@ -51,7 +51,7 @@ object emBinary {
         // this is probably terribly inefficient (I could try both @ once)
         // it might be 'cons'ing into a brand new array every time...
         probZ1 = priorZ1.map(log(_))
-        probZ0 = priorZ1.map(1 - log(_))
+        probZ0 = priorZ1.map(x => log(1 - x))
 
         for (label <- labels) {
             val i   = label.labelerId

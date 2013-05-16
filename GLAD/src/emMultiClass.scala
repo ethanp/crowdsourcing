@@ -50,8 +50,9 @@ object emMultiClass {
 
     def eStep() {
 
+        // TODO this is going to have to change
         probZ1 = Array.fill[Double](numItems)(log(priorZk))
-        probZ0 = Array.fill[Double](numItems)(1-log(priorZk))
+        probZ0 = Array.fill[Double](numItems)(log(1 - priorZk))
 
         for (label <- labels) {
             val i   = label.labelerId
@@ -145,8 +146,8 @@ object emMultiClass {
         var L = 0.0
 
         for (j <- 0 until numItems) {
-            var P1 = priorZk(j)
-            var P0 = 1 - priorZk(j)
+            var P1 = priorZk
+            var P0 = 1 - priorZk
             for (idx <- 0 until numLabels) {
                 if (labels(idx).itemIdx == j) {
                     val i = labels(idx).labelerId
@@ -254,10 +255,10 @@ object emMultiClass {
         var Q = 0.0
         var lastQ = 0.0
 
-        eStep()         // not sure why these 2 lines are in here,
-        Q = computeQ()  // they are repeated in the loop
-
+        eStep()
+        Q = computeQ()
         printf("Q = %f\n", Q)
+
         do {
             lastQ = Q
             /* "Re-estimate P(Z|L,alpha,beta)" */
@@ -282,8 +283,7 @@ object emMultiClass {
 
         /* Read Data */
 //        val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"  // original data
-        val dataLocation = "../../AashishsCode/Crowd_data/rawFiles/GAL/responses" +
-                "/AdultContent1_Responses.txt"
+        val dataLocation = "/Users/Ethan/Dropbox/MLease/AashishsCode/Crowd_Data/adaptedData/rawFiles/GAL/responses/AdultContent1_Responses.txt"
         val lines = Source.fromFile(dataLocation).getLines()
 
         /*
@@ -303,9 +303,12 @@ object emMultiClass {
         for (line <- lines) {
             stringArr = line.split("\t")
             // store all metadata in array (implicit map [int -> dataName])
-            if (!workers.contains(stringArr(0))) workers  += stringArr(0)
-            if (!items.contains(stringArr(1)))   items    += stringArr(1)
-            if (!categs.contains(stringArr(1)))  categs   += stringArr(2)
+            if (!workers.contains(stringArr(0)))
+                workers  += stringArr(0)
+            if (!items.contains(stringArr(1)))
+                items    += stringArr(1)
+            if (!categs.contains(stringArr(2)))
+                categs   += stringArr(2)
 
             val label = new MultiLabel()
 
