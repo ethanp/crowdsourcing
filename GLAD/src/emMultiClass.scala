@@ -21,6 +21,9 @@ object emMultiClass {
     var numLabelers = 0
     var numItems    = 0
     var numCategs   = 0
+    val workers = new mutable.ArrayBuffer[String]()
+    val items = new mutable.ArrayBuffer[String]()
+    val categs = new mutable.ArrayBuffer[String]()
 
     /* arrays sized according to above: */
 
@@ -35,6 +38,7 @@ object emMultiClass {
     // from E-step
     var probZ1 = Array[Double]()
     var probZ0 = Array[Double]()
+    var probZX = Array[Array[Double]]()
 
     // from M-step
     var alpha      = Array[Double]()
@@ -42,7 +46,7 @@ object emMultiClass {
     var dQdAlpha   = Array[Double]()
     var dQdBeta    = Array[Double]()
 
-    // set as 0.5 by file
+    // set as 1/K in main()
     var priorZk = 0.0
 
     // for both intents and purposes
@@ -50,25 +54,26 @@ object emMultiClass {
 
     def eStep() {
 
-        // TODO this is going to have to change
-        probZ1 = Array.fill[Double](numItems)(log(priorZk))
-        probZ0 = Array.fill[Double](numItems)(log(1 - priorZk))
+        for (array <- 0 until numCategs)
+            probZX(array) = Array.fill[Double](numCategs)(log(1/priorZk))
 
         for (label <- labels) {
             val i   = label.labelerId
             val j   = label.itemIdx
             val lij = label.label
 
-            probZ1(j) += logProbL(lij, 1, alpha(i), beta(j))
-            probZ0(j) += logProbL(lij, 0, alpha(i), beta(j))
+            for (k <- 0 until numCategs)
+                probZX(j)(k) += logProbL(lij, k, alpha(i), beta(j))
         }
 
         // "Exponentiate and renormalize"
         for (j <- 0 until numItems) {
-            probZ1(j) = exp(probZ1(j))
-            probZ0(j) = exp(probZ0(j))
-            probZ1(j) = probZ1(j) / (probZ1(j) + probZ0(j))
-            probZ0(j) = 1 - probZ1(j)
+            for (k <- 0 until numCategs)
+                probZX(j)(k) = exp(probZX(j)(k))
+            val sum = probZX(j).sum
+            for (k <- 0 until numCategs) {
+                probZX(j)(k) = probZX(j)(k) / sum
+            }
         }
     }
 
@@ -76,7 +81,7 @@ object emMultiClass {
         if (z == l)
             0 - log(1 + exp(- exp(betaJ) * alphaI))
         else
-            0 - log(1 + exp(exp(betaJ) * alphaI))
+            -log((1/(numCategs - 1)) * (1 - (1/(1 + exp(-exp(betaJ) * alphaI)))))
     }
 
     def zScore(x: Double): Double = 1/sqrt(2*Pi) * exp(-pow(x,2)/2)
@@ -86,11 +91,10 @@ object emMultiClass {
         var Q = 0.0
 
         /* "Start with the expectation of the sum of priors over all images" */
-        // first line of pg. 2: SS{ p(k) * ln(p(z)) }
-        for (j <- 0 until numItems) {
-            Q += probZ1(j) * log(priorZk)
-            Q += probZ0(j) * log(1 - priorZk)
-        }
+        // formula given as "Q = ..." on pg. 3
+        for (j <- 0 until numItems)
+            for (k <- 0 until numCategs)
+                Q += probZX(j)(k) * log(priorZk)
 
         // second line of pg. 2: SS{ p(k) * ln(p(l|z,a,b)) }
         for (label <- labels) {
@@ -124,8 +128,8 @@ object emMultiClass {
                 logOneMinusSigma = -exp(beta(j)) * alpha(i)
 
             // from the final formulation of Q(a,b), midway down pg. 2
-            Q += probZ1(j) * (lij * logSigma + (1 - lij) * logOneMinusSigma) +
-                    probZ0(j) * ((1 - lij) * logSigma + lij * logOneMinusSigma)
+            for (k <- 0 until numCategs)
+                Q += logProbL(lij, k, alpha(i), beta(j))
         }
 
         // this isn't specified by the model, but seemed like a good idea to the authors:
@@ -199,6 +203,10 @@ object emMultiClass {
         printf("After GradientAscent Q = %f\n", computeQ())
     }
 
+    def delta(i: Int, j: Int) = {
+        if (i == j) 0 else 1
+    }
+
     // TODO This is NOT quite the formula they worked out in the notes !!
     // I'm going to use it anyway; to change it to their derivation would be easy
     def calcGradientComponents () {
@@ -223,11 +231,12 @@ object emMultiClass {
             val lij   = label.label
             val sigma = logistic(exp(beta(j)) * alpha(i))
 
-            // What is this?
-            dQdAlpha(i) += (probZ1(j) * (lij - sigma) +
-                    probZ0(j) * (1 - lij - sigma)) * exp(beta(j))
-            dQdBeta(j) += (probZ1(j) * (lij - sigma) +
-                    probZ0(j) * (1 - lij - sigma)) * alpha(i) * exp(beta(j))
+            for (k <- 0 until numCategs) {
+                dQdAlpha(i) += probZX(j)(k) * (delta(lij,k) - sigma) * exp(beta(j)) +
+                        (1 - delta(lij,k)) * log(numCategs - 1)
+                dQdBeta(j) += probZX(j)(k) * (delta(lij,k) - sigma) * alpha(i) +
+                        (1 - delta(lij,k)) * log(numCategs - 1)
+            }
         }
     }
 
@@ -240,7 +249,8 @@ object emMultiClass {
             printf("Beta[%d] = %f\n", j, exp(beta(j)))
 
         for (j <- 0 until numItems)
-            printf("P(Z(%d)=1) = %f\n", j, probZ1(j))
+            for (k <- 0 until numCategs)
+                printf("P(%-10s=%10s) = %f\n", items(j), categs(k), probZX(j)(k))
     }
 
     def EM () {
@@ -276,6 +286,10 @@ object emMultiClass {
             printf("difference is %.7f\n\n", abs((Q-lastQ)/lastQ))
         } while (abs((Q-lastQ)/lastQ) > THRESHOLD)
 
+        eStep()
+        Q = computeQ()
+        printf("Q = %f\n", Q)
+
         outputResults()
     }
     def main(args: Array[String]) {
@@ -295,9 +309,6 @@ object emMultiClass {
         */
 
         // extract metadata from the data itself
-        val workers = new mutable.ArrayBuffer[String]()
-        val items = new mutable.ArrayBuffer[String]()
-        val categs = new mutable.ArrayBuffer[String]()
         var stringArr = Array[String]()
 
         for (line <- lines) {
@@ -328,6 +339,9 @@ object emMultiClass {
         priorAlpha = Array.fill[Double](numLabelers)(1.0)
         priorBeta  = Array.fill[Double](numItems)(1.0)
         priorZk    = 1.0 / numCategs  // set p(z_j = k) = 1/k
+        probZX     = new Array[Array[Double]](numItems)
+        for (i <- 0 until numItems)
+            probZX(i) = new Array[Double](numCategs)
 
         EM()
     }
