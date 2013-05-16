@@ -2,16 +2,13 @@ import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 import math._
 
-/** TODO: Make it MultiClass */
-/* TODO when debugging, he has a lot of builtin printf's I can utilize */
-
 class Label {
     var imageIdx  = 0
     var labelerId = 0
     var label     = 0
 }
 
-object em {
+object emBinary {
     // read in from main of file
     val labels = new ArrayBuffer[Label]()
 
@@ -284,7 +281,10 @@ object em {
         println("hello world")
 
         /* Read Data */
-        val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"
+//        val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"
+        val dataLocation = "../." +
+                "./AashishsCode/Crowd_data/adaptedData/WVSCM/BarzanMozafari" +
+                "/workerResponses.txt"
         val lines = Source.fromFile(dataLocation).getLines()
         val something = lines.next().split(" ")
 
