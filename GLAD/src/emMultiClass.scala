@@ -27,17 +27,11 @@ object emMultiClass {
 
     /* arrays sized according to above: */
 
-    // generated from forPriorZ1
-    val priorProbZ1 = Array[Double]()
-    val priorProbZ0 = Array[Double]()
-
     // set as 1 in his code
     var priorAlpha = Array[Double]()
     var priorBeta  = Array[Double]()
 
     // from E-step
-    var probZ1 = Array[Double]()
-    var probZ0 = Array[Double]()
     var probZX = Array[Array[Double]]()
 
     // from M-step
@@ -55,13 +49,14 @@ object emMultiClass {
     def eStep() {
 
         for (array <- 0 until numCategs)
-            probZX(array) = Array.fill[Double](numCategs)(log(1/priorZk))
+            probZX(array) = Array.fill[Double](numCategs)(log(priorZk))
 
         for (label <- labels) {
             val i   = label.labelerId
             val j   = label.itemIdx
             val lij = label.label
 
+            // TODO: this is producing positive infinities for (almost) EVERYTHING
             for (k <- 0 until numCategs)
                 probZX(j)(k) += logProbL(lij, k, alpha(i), beta(j))
         }
@@ -79,12 +74,41 @@ object emMultiClass {
 
     def logProbL (l: Int, z: Int, alphaI: Double, betaJ: Double): Double = {
         if (z == l)
-            0 - log(1 + exp(- exp(betaJ) * alphaI))
+            return getLogSigma(alphaI, betaJ)
         else
             -log((1/(numCategs - 1)) * (1 - (1/(1 + exp(-exp(betaJ) * alphaI)))))
     }
 
     def zScore(x: Double): Double = 1/sqrt(2*Pi) * exp(-pow(x,2)/2)
+
+    def getLogSigma(alpha_i: Double, beta_j: Double): Double = {
+        var logSigma = -log(1 + exp(-exp(beta_j) * alpha_i))
+        /* NOTE: "WHY THE IF"
+         * this would be neg-infinity if exp(-exp(beta(j)) * alpha(i))) ~= infinity
+         * which would happen if alpha_i < 0 && beta_j > 4-ish
+         * which would happen if it was a nefarious rater on an easy picture
+         * e.g. using alpha,beta = -5,5 = e^(5e^5) = 1.9 E 322 !
+         * a bad PLOT can be found here:
+         * http://www.wolframalpha.com/input/?i=exp%28-exp%28x%29*y%29+with+x+from+0+to+10%2C+y+from+-10+to+1
+         * The idea is that we're replacing it with e^b * a; IDK why they chose that,
+         * but anyways that replacement would still be negative, but with
+         * a much smaller absolute value
+         */
+        if (logSigma isNegInfinity)
+            logSigma = exp(beta_j) * alpha_i
+
+        return logSigma
+    }
+
+    def getLogOneMinusSigma(alpha_i: Double, beta_j: Double): Double = {
+        var logOneMinusSigma = -log( 1 + exp( exp(beta_j) * alpha_i ) )
+
+        // I don't understand why this makes sense
+        if (logOneMinusSigma isNegInfinity)
+            logOneMinusSigma = -exp(beta_j) * alpha_i
+
+        return logOneMinusSigma
+    }
 
     def computeQ(): Double = {
 
@@ -104,28 +128,9 @@ object emMultiClass {
 
             /* "Do some analytic manipulation first for numerical stability!" */
             // the supp. calls this "ln\sigma"
-            var logSigma = -log(1 + exp(-exp(beta(j)) * alpha(i)))
+            var logSigma = getLogSigma(alpha(i), beta(j))
 
-            /* NOTE: "WHY THE IF"
-             * this would be neg-infinity if exp(-exp(beta(j)) * alpha(i))) ~= infinity
-             * which would happen if alpha_i < 0 && beta_j > 4-ish
-             * which would happen if it was a nefarious rater on an easy picture
-             * e.g. using alpha,beta = -5,5 = e^(5e^5) = 1.9 E 322 !
-             * a bad PLOT can be found here:
-             * http://www.wolframalpha.com/input/?i=exp%28-exp%28x%29*y%29+with+x+from+0+to+10%2C+y+from+-10+to+1
-             * The idea is that we're replacing it with e^b * a; IDK why they chose that,
-             * but anyways that replacement would still be negative, but with
-             * a much smaller absolute value
-             */
-            if (logSigma isNegInfinity)
-                logSigma = exp(beta(j)) * alpha(i)
-
-
-            var logOneMinusSigma = -log( 1 + exp( exp(beta(j)) * alpha(i) ) )
-
-            // see NOTE above, except now it's for /positive/ alpha_i
-            if (logOneMinusSigma isNegInfinity)
-                logOneMinusSigma = -exp(beta(j)) * alpha(i)
+            var logOneMinusSigma = getLogOneMinusSigma(alpha(i), beta(j))
 
             // from the final formulation of Q(a,b), midway down pg. 2
             for (k <- 0 until numCategs)
@@ -297,7 +302,7 @@ object emMultiClass {
 
         /* Read Data */
 //        val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"  // original data
-        val dataLocation = "/Users/Ethan/Dropbox/MLease/AashishsCode/Crowd_Data/adaptedData/rawFiles/GAL/responses/AdultContent1_Responses.txt"
+        val dataLocation = "/Users/Ethan/Dropbox/MLease/AashishsCode/Crowd_Data/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
         val lines = Source.fromFile(dataLocation).getLines()
 
         /*
@@ -330,7 +335,7 @@ object emMultiClass {
             labels += label
         }
 
-        numLabels   = lines.length
+        numLabels = labels.length
         numLabelers = workers.size
         numItems    = items.size
         numCategs   = categs.size
