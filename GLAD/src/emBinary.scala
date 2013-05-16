@@ -281,10 +281,7 @@ object emBinary {
         println("hello world")
 
         /* Read Data */
-//        val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"
-        val dataLocation = "../." +
-                "./AashishsCode/Crowd_data/adaptedData/WVSCM/BarzanMozafari" +
-                "/workerResponses.txt"
+        val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"
         val lines = Source.fromFile(dataLocation).getLines()
         val something = lines.next().split(" ")
 

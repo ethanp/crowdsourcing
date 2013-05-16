@@ -1,3 +1,4 @@
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 import math._
@@ -7,7 +8,7 @@ import math._
  */
 
 class MultiLabel {
-    var imageIdx  = 0
+    var itemIdx  = 0
     var labelerId = 0
     var label     = 0
 }
@@ -16,11 +17,10 @@ object emMultiClass {
     // read in from main of file
     val labels = new ArrayBuffer[MultiLabel]()
 
-    // read in from top of file
     var numLabels   = 0
     var numLabelers = 0
-    var numImages   = 0
-    var forPriorZ1  = 0.0  // I made this but it makes life easier
+    var numItems    = 0
+    var numCategs   = 0
 
     /* arrays sized according to above: */
 
@@ -30,36 +30,32 @@ object emMultiClass {
 
     // set as 1 in his code
     var priorAlpha = Array[Double]()
-    var priorBeta = Array[Double]()
+    var priorBeta  = Array[Double]()
 
     // from E-step
     var probZ1 = Array[Double]()
     var probZ0 = Array[Double]()
 
     // from M-step
-    var alpha = Array[Double]()
-    var beta  = Array[Double]()
-    var dQdAlpha = Array[Double]()
-    var dQdBeta = Array[Double]()
-    var vectorAB = Array[Double]()
-    var vectorGrad = Array[Double]()
+    var alpha      = Array[Double]()
+    var beta       = Array[Double]()
+    var dQdAlpha   = Array[Double]()
+    var dQdBeta    = Array[Double]()
 
     // set as 0.5 by file
-    var priorZ1 = Array[Double]()
+    var priorZk = 0.0
 
     // for both intents and purposes
     val THRESHOLD: Double = 1E-5
 
     def eStep() {
 
-        // this is probably terribly inefficient (I could try both @ once)
-        // it might be 'cons'ing into a brand new array every time...
-        probZ1 = priorZ1.map(log(_))
-        probZ0 = priorZ1.map(1 - log(_))
+        probZ1 = Array.fill[Double](numItems)(log(priorZk))
+        probZ0 = Array.fill[Double](numItems)(1-log(priorZk))
 
         for (label <- labels) {
             val i   = label.labelerId
-            val j   = label.imageIdx
+            val j   = label.itemIdx
             val lij = label.label
 
             probZ1(j) += logProbL(lij, 1, alpha(i), beta(j))
@@ -67,7 +63,7 @@ object emMultiClass {
         }
 
         // "Exponentiate and renormalize"
-        for (j <- 0 until numImages) {
+        for (j <- 0 until numItems) {
             probZ1(j) = exp(probZ1(j))
             probZ0(j) = exp(probZ0(j))
             probZ1(j) = probZ1(j) / (probZ1(j) + probZ0(j))
@@ -90,15 +86,15 @@ object emMultiClass {
 
         /* "Start with the expectation of the sum of priors over all images" */
         // first line of pg. 2: SS{ p(k) * ln(p(z)) }
-        for (j <- 0 until numImages) {
-            Q += probZ1(j) * log(priorZ1(j))
-            Q += probZ0(j) * log(1 - priorZ1(j))
+        for (j <- 0 until numItems) {
+            Q += probZ1(j) * log(priorZk)
+            Q += probZ0(j) * log(1 - priorZk)
         }
 
         // second line of pg. 2: SS{ p(k) * ln(p(l|z,a,b)) }
         for (label <- labels) {
             val i   = label.labelerId
-            val j   = label.imageIdx
+            val j   = label.itemIdx
             val lij = label.label
 
             /* "Do some analytic manipulation first for numerical stability!" */
@@ -135,7 +131,7 @@ object emMultiClass {
         /* Add Gaussian (standard normal) prior for alpha and beta*/
         for (i <- 0 until numLabelers)
             Q += log(zScore(alpha(i) - priorAlpha(i)))
-        for (j <- 0 until numImages)
+        for (j <- 0 until numItems)
             Q += log(zScore(beta(j) - priorBeta(j)))
 
         return Q
@@ -148,11 +144,11 @@ object emMultiClass {
     def computeLikelihood(): Double = {
         var L = 0.0
 
-        for (j <- 0 until numImages) {
-            var P1 = priorZ1(j)
-            var P0 = 1 - priorZ1(j)
+        for (j <- 0 until numItems) {
+            var P1 = priorZk(j)
+            var P0 = 1 - priorZk(j)
             for (idx <- 0 until numLabels) {
-                if (labels(idx).imageIdx == j) {
+                if (labels(idx).itemIdx == j) {
                     val i = labels(idx).labelerId
                     val lij = labels(idx).label
                     val sigma = logistic(exp(beta(j)) * alpha(i))
@@ -166,7 +162,7 @@ object emMultiClass {
         /* Add Gaussian (standard normal) prior for alpha and beta */
         for (i <- 0 until numLabelers)
             L += log(zScore(alpha(i) - priorAlpha(i)))
-        for (j <- 0 until numImages)
+        for (j <- 0 until numItems)
             L += log(zScore(beta(j) - priorBeta(j)))
 
         return L
@@ -175,7 +171,7 @@ object emMultiClass {
     def ascend(stepSize: Double) {
         for (i <- 0 until numLabelers)
             alpha(i) += stepSize * dQdAlpha(i)
-        for (j <- 0 until numImages)
+        for (j <- 0 until numItems)
             beta(j) += stepSize * dQdBeta(j)
     }
 
@@ -209,7 +205,7 @@ object emMultiClass {
         // Where did this part come from?
         for (i <- 0 until numLabelers)
             dQdAlpha(i) = alpha(i) - priorAlpha(i)
-        for (j <- 0 until numImages)
+        for (j <- 0 until numItems)
             dQdBeta(j) = beta(j) - priorBeta(j)
 
         // Why isn't it this?:
@@ -222,7 +218,7 @@ object emMultiClass {
 
         for (label <- labels) {
             val i     = label.labelerId
-            val j     = label.imageIdx
+            val j     = label.itemIdx
             val lij   = label.label
             val sigma = logistic(exp(beta(j)) * alpha(i))
 
@@ -239,10 +235,10 @@ object emMultiClass {
         for (i <- 0 until numLabelers)
             printf("Alpha[%d] = %f\n", i, alpha(i))
 
-        for (j <- 0 until numImages)
+        for (j <- 0 until numItems)
             printf("Beta[%d] = %f\n", j, exp(beta(j)))
 
-        for (j <- 0 until numImages)
+        for (j <- 0 until numItems)
             printf("P(Z(%d)=1) = %f\n", j, probZ1(j))
     }
 
@@ -253,7 +249,7 @@ object emMultiClass {
         alpha = priorAlpha.map(x => x)
         beta = priorBeta.map(x => x)
         dQdAlpha = new Array[Double](numLabelers)
-        dQdBeta = new Array[Double](numImages)
+        dQdBeta = new Array[Double](numItems)
 
         var Q = 0.0
         var lastQ = 0.0
@@ -285,34 +281,51 @@ object emMultiClass {
         println("hello world")
 
         /* Read Data */
-        val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"
+//        val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"  // original data
+        val dataLocation = "../../AashishsCode/Crowd_data/rawFiles/GAL/responses" +
+                "/AdultContent1_Responses.txt"
         val lines = Source.fromFile(dataLocation).getLines()
-        val something = lines.next().split(" ")
 
+        /*
         // extract metadata from first line
         numLabels   = something(0).toInt
         numLabelers = something(1).toInt
         numImages   = something(2).toInt
         forPriorZ1  = something(3).toDouble
+        */
 
-        // initialize priors
-        priorAlpha = Array.fill[Double](numLabelers)(1.0)
-        priorBeta  = Array.fill[Double](numImages)(1.0)
-        priorZ1    = Array.fill[Double](numImages)(forPriorZ1)
-        vectorAB = new Array[Double](numLabelers + numImages)
-        vectorGrad = new Array[Double](numLabelers + numImages)
+        // extract metadata from the data itself
+        val workers = new mutable.ArrayBuffer[String]()
+        val items = new mutable.ArrayBuffer[String]()
+        val categs = new mutable.ArrayBuffer[String]()
+        var stringArr = Array[String]()
 
-        // read in the data
-        for(line <- lines) {
-            val lineData = line.split(" ")
+        for (line <- lines) {
+            stringArr = line.split("\t")
+            // store all metadata in array (implicit map [int -> dataName])
+            if (!workers.contains(stringArr(0))) workers  += stringArr(0)
+            if (!items.contains(stringArr(1)))   items    += stringArr(1)
+            if (!categs.contains(stringArr(1)))  categs   += stringArr(2)
+
             val label = new MultiLabel()
-            label.imageIdx = lineData(0).toInt
-            label.labelerId = lineData(1).toInt
-            label.label = lineData(2).toInt
+
+            // store data itself in MultiLabel objects using mapped int from above arrays
+            label.labelerId = workers indexOf stringArr(0)
+            label.itemIdx   = items   indexOf stringArr(1)
+            label.label     = categs  indexOf stringArr(2)
             labels += label
         }
 
-        /* Run EM */
+        numLabels   = lines.length
+        numLabelers = workers.size
+        numItems    = items.size
+        numCategs   = categs.size
+
+        // initialize priors
+        priorAlpha = Array.fill[Double](numLabelers)(1.0)
+        priorBeta  = Array.fill[Double](numItems)(1.0)
+        priorZk    = 1.0 / numCategs  // set p(z_j = k) = 1/k
+
         EM()
     }
 }
