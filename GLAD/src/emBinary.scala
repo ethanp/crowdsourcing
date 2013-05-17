@@ -189,13 +189,9 @@ object emBinary {
     }
 
     def MStep () {
-        printf("Before GradientAscent Q = %f\n", computeQ())
-
         // the algorithm is very sensitive to the settings of these parameters
         // I have found that (25, .001, .01) works well and matches the given output
         doGradientAscent(25, .001, .01)
-
-        printf("After GradientAscent Q = %f\n", computeQ())
     }
 
     // TODO This is NOT quite the formula they worked out in the notes !!
@@ -222,7 +218,6 @@ object emBinary {
             val lij   = label.label
             val sigma = logistic(exp(beta(j)) * alpha(i))
 
-            // What is this?
             dQdAlpha(i) += (probZ1(j) * (lij - sigma) +
                                 probZ0(j) * (1 - lij - sigma)) * exp(beta(j))
             dQdBeta(j) += (probZ1(j) * (lij - sigma) +

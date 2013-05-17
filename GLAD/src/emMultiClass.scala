@@ -56,10 +56,8 @@ object emMultiClass {
             val j   = label.itemIdx
             val lij = label.label
 
-            // TODO: this is producing positive infinities for (almost) EVERYTHING
             for (k <- 0 until numCategs) {
-                val logProb: Double = logProbL(lij, k, alpha(i), beta(j))
-                probZX(j)(k) += logProb  // the 2ND 1 is the 1st 2b +oo
+                probZX(j)(k) += logProbL(lij, k, alpha(i), beta(j))
             }
         }
 
@@ -76,8 +74,8 @@ object emMultiClass {
 
     def logProbL (l: Int, z: Int, alpha: Double, beta: Double): Double = {
         if (z == l)
-            return getLogSigma(alpha, beta)
-        else  // TODO: check that this is right, noting that I no longer care what he wrote
+            getLogSigma(alpha, beta)
+        else
             -log(numCategs - 1) + getLogOneMinusSigma(alpha, beta)
     }
 
@@ -98,20 +96,20 @@ object emMultiClass {
          * but anyways that replacement would still be negative, but with
          * a much smaller absolute value
          */
-        if (logSigma isNegInfinity)
+        if (logSigma isNegInfinity) // this does happen periodically
             logSigma = exp(beta_j) * alpha_i
 
-        return logSigma
+        logSigma
     }
 
     def getLogOneMinusSigma(alpha_i: Double, beta_j: Double): Double = {
         var logOneMinusSigma = log(1 - getSigma(alpha_i, beta_j))
 
-        // I don't understand why this makes sense
+        // I don't understand why this makes sense, it DOES happen periodically though
         if (logOneMinusSigma isNegInfinity)
             logOneMinusSigma = -exp(beta_j) * alpha_i
 
-        return logOneMinusSigma
+        logOneMinusSigma
     }
 
     def computeQ(): Double = {
@@ -143,37 +141,6 @@ object emMultiClass {
         return Q
     }
 
-    def logistic(x: Double): Double = 1.0 / (1 + exp(-x))
-
-    /* The Likelihood is not used by the model in determining values this method
-        is simply there to increase awareness of how the model is performing */
-    def computeLikelihood(): Double = {
-        var L = 0.0
-
-        for (j <- 0 until numItems) {
-            var P1 = priorZk
-            var P0 = 1 - priorZk
-            for (idx <- 0 until numLabels) {
-                if (labels(idx).itemIdx == j) {
-                    val i = labels(idx).labelerId
-                    val lij = labels(idx).label
-                    val sigma = logistic(exp(beta(j)) * alpha(i))
-                    P1 *= pow(sigma, lij) * pow(1 - sigma, 1 - lij)
-                    P0 *= pow(sigma, 1 - lij) * pow(1 - sigma, lij)
-                }
-            }
-            L += log(P1 + P0)
-        }
-
-        /* Add Gaussian (standard normal) prior for alpha and beta */
-        for (i <- 0 until numLabelers)
-            L += log(zScore(alpha(i) - priorAlpha(i)))
-        for (j <- 0 until numItems)
-            L += log(zScore(beta(j) - priorBeta(j)))
-
-        return L
-    }
-
     def ascend(stepSize: Double) {
         for (i <- 0 until numLabelers)
             alpha(i) += stepSize * dQdAlpha(i)
@@ -181,62 +148,58 @@ object emMultiClass {
             beta(j) += stepSize * dQdBeta(j)
     }
 
+    // TODO: every time I "ascend", my score gets LOWER! that's not good.
+    // it's also not what happens in my Binary-case code.
     def doGradientAscent(iterations: Int, stepSize: Double, tolerance: Double) {
         var iteration = 0
         var oldQ = computeQ()
         var Q = oldQ
         do {
             oldQ = Q
-            calcGradientComponents()
+            calcGradient()
             ascend(stepSize)
             Q = computeQ()
             iteration += 1
-        } while (iteration < iterations && Q - oldQ > tolerance)
+        } while (iteration < iterations && abs(Q - oldQ) > tolerance)
     }
 
     def MStep () {
-        printf("Before GradientAscent Q = %f\n", computeQ())
-
         // the algorithm is very sensitive to the settings of these parameters
-        // I have found that (25, .001, .01) works well and matches the given output
-        doGradientAscent(25, .001, .01)
-
-        printf("After GradientAscent Q = %f\n", computeQ())
+        // (25, .001, .01) matches the given output on the original given data
+        // for some value-sets, it won't ever terminate
+        doGradientAscent(45, .0010, .01)
     }
 
-    def delta(i: Int, j: Int) = {
-        if (i == j) 0 else 1
-    }
+    def delta(i: Int, j: Int) = if (i == j) 1 else 0
 
-    // TODO This is NOT quite the formula they worked out in the notes !!
-    // I'm going to use it anyway; to change it to their derivation would be easy
-    def calcGradientComponents () {
+    // This is NOT quite the formula they implemented; instead, it's from the derivation
+    // in the supplementary materials. I don't know why they didn't implement that themselves.
+    def calcGradient () {
 
-        // Where did this part come from?
+        // Theirs had this part
+        /*
         for (i <- 0 until numLabelers)
             dQdAlpha(i) = alpha(i) - priorAlpha(i)
         for (j <- 0 until numItems)
             dQdBeta(j) = beta(j) - priorBeta(j)
-
-        // Why isn't it this?:
-        /*
-        for (i <- 0 until numLabelers)
-            dQdAlpha(i) = 0.0
-        for (j <- 0 until numImages)
-            dQdBeta(j) = 0.0
         */
+
+        // Mine does this instead
+        dQdAlpha = Array.fill(numLabelers)(0.0)
+        dQdBeta  = Array.fill(numItems)(0.0)
 
         for (label <- labels) {
             val i     = label.labelerId
             val j     = label.itemIdx
             val lij   = label.label
-            val sigma = logistic(exp(beta(j)) * alpha(i))
+            val sigma = getSigma(beta(j),alpha(i))
+
 
             for (k <- 0 until numCategs) {
-                dQdAlpha(i) += probZX(j)(k) * (delta(lij,k) - sigma) * exp(beta(j)) +
-                        (1 - delta(lij,k)) * log(numCategs - 1)
-                dQdBeta(j) += probZX(j)(k) * (delta(lij,k) - sigma) * alpha(i) +
-                        (1 - delta(lij,k)) * log(numCategs - 1)
+                dQdAlpha(i) += probZX(j)(k) * ((delta(lij,k) - sigma) * exp(beta(j)) +
+                        (1 - delta(lij,k)) * log(numCategs - 1))
+                dQdBeta(j) += probZX(j)(k) * ((delta(lij,k) - sigma) * alpha(i) +
+                        (1 - delta(lij,k)) * log(numCategs - 1))
             }
         }
     }
@@ -263,12 +226,8 @@ object emMultiClass {
         dQdAlpha = new Array[Double](numLabelers)
         dQdBeta = new Array[Double](numItems)
 
-        var Q = 0.0
-        var lastQ = 0.0
-
-        eStep()
-        Q = computeQ()
-        printf("Q = %f\n", Q)
+        var Q = computeQ()
+        var lastQ = Q
 
         do {
             lastQ = Q
@@ -276,14 +235,13 @@ object emMultiClass {
             eStep()
             Q = computeQ()
             println("\nAfter E-Step:")
-            printf("Q = %f; L = %f\n", Q, computeLikelihood())
+            printf("Q = %f\n", Q)
 
-            /*outputResults(data) [not implemented]*/
             MStep()
 
             Q = computeQ()
             printf("\nAfter M-Step:\n")
-            printf("Q = %f; L = %f\n", Q, computeLikelihood())
+            printf("Q = %f\n", Q)
             printf("difference is %.7f\n\n", abs((Q-lastQ)/lastQ))
         } while (abs((Q-lastQ)/lastQ) > THRESHOLD)
 
