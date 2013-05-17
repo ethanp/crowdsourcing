@@ -44,7 +44,7 @@ object emMultiClass {
     var priorZk = 0.0
 
     // for both intents and purposes
-    val THRESHOLD: Double = 1E-5
+    val THRESHOLD: Double = 1E-3
 
     def eStep() {
 
@@ -167,7 +167,7 @@ object emMultiClass {
         // the algorithm is very sensitive to the settings of these parameters
         // (25, .001, .01) matches the given output on the original given data
         // for some value-sets, it won't ever terminate
-        doGradientAscent(45, .0010, .01)
+        doGradientAscent(35, .0001, .01)
     }
 
     def delta(i: Int, j: Int) = if (i == j) 1 else 0
@@ -184,7 +184,7 @@ object emMultiClass {
             dQdBeta(j) = beta(j) - priorBeta(j)
         */
 
-        // Mine does this instead
+        // Mine does this instead (it seems to make no difference)
         dQdAlpha = Array.fill(numLabelers)(0.0)
         dQdBeta  = Array.fill(numItems)(0.0)
 
@@ -255,10 +255,7 @@ object emMultiClass {
         println("hello world")
 
         /* Read Data */
-//        val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"  // original data
-        val dataLocation = "/Users/Ethan/Dropbox/MLease/AashishsCode/Crowd_Data/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
-        val lines = Source.fromFile(dataLocation).getLines()
-
+        val dataLocation = "/Users/Ethan/Dropbox/MLease/AashishsCode/Crowd_Data/adaptedData/rawFiles/GAL/responses/AdultContent1_Responses.txt"
         /*
         // extract metadata from first line
         numLabels   = something(0).toInt
@@ -270,7 +267,7 @@ object emMultiClass {
         // extract metadata from the data itself
         var stringArr = Array[String]()
 
-        for (line <- lines) {
+        for (line <- Source.fromFile(dataLocation).getLines()) {
             stringArr = line.split("\t")
             // store all metadata in array (implicit map [int -> dataName])
             if (!workers.contains(stringArr(0)))
