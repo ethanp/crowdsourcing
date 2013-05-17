@@ -57,8 +57,10 @@ object emMultiClass {
             val lij = label.label
 
             // TODO: this is producing positive infinities for (almost) EVERYTHING
-            for (k <- 0 until numCategs)
-                probZX(j)(k) += logProbL(lij, k, alpha(i), beta(j))
+            for (k <- 0 until numCategs) {
+                val logProb: Double = logProbL(lij, k, alpha(i), beta(j))
+                probZX(j)(k) += logProb  // the 2ND 1 is the 1st 2b +oo
+            }
         }
 
         // "Exponentiate and renormalize"
@@ -72,17 +74,19 @@ object emMultiClass {
         }
     }
 
-    def logProbL (l: Int, z: Int, alphaI: Double, betaJ: Double): Double = {
+    def logProbL (l: Int, z: Int, alpha: Double, beta: Double): Double = {
         if (z == l)
-            return getLogSigma(alphaI, betaJ)
-        else
-            -log((1/(numCategs - 1)) * (1 - (1/(1 + exp(-exp(betaJ) * alphaI)))))
+            return getLogSigma(alpha, beta)
+        else  // TODO: check that this is right, noting that I no longer care what he wrote
+            -log(numCategs - 1) + getLogOneMinusSigma(alpha, beta)
     }
 
     def zScore(x: Double): Double = 1/sqrt(2*Pi) * exp(-pow(x,2)/2)
 
+    def getSigma(alpha: Double, beta: Double): Double = 1/(1 + exp(-exp(beta) * alpha))
+
     def getLogSigma(alpha_i: Double, beta_j: Double): Double = {
-        var logSigma = -log(1 + exp(-exp(beta_j) * alpha_i))
+        var logSigma = log(getSigma(alpha_i, beta_j))
         /* NOTE: "WHY THE IF"
          * this would be neg-infinity if exp(-exp(beta(j)) * alpha(i))) ~= infinity
          * which would happen if alpha_i < 0 && beta_j > 4-ish
@@ -101,7 +105,7 @@ object emMultiClass {
     }
 
     def getLogOneMinusSigma(alpha_i: Double, beta_j: Double): Double = {
-        var logOneMinusSigma = -log( 1 + exp( exp(beta_j) * alpha_i ) )
+        var logOneMinusSigma = log(1 - getSigma(alpha_i, beta_j))
 
         // I don't understand why this makes sense
         if (logOneMinusSigma isNegInfinity)
@@ -114,35 +118,27 @@ object emMultiClass {
 
         var Q = 0.0
 
-        /* "Start with the expectation of the sum of priors over all images" */
-        // formula given as "Q = ..." on pg. 3
+        /* formula given as "Q = ..." on pg. 3 */
         for (j <- 0 until numItems)
             for (k <- 0 until numCategs)
                 Q += probZX(j)(k) * log(priorZk)
 
-        // second line of pg. 2: SS{ p(k) * ln(p(l|z,a,b)) }
         for (label <- labels) {
             val i   = label.labelerId
             val j   = label.itemIdx
             val lij = label.label
-
-            /* "Do some analytic manipulation first for numerical stability!" */
-            // the supp. calls this "ln\sigma"
-            var logSigma = getLogSigma(alpha(i), beta(j))
-
-            var logOneMinusSigma = getLogOneMinusSigma(alpha(i), beta(j))
-
-            // from the final formulation of Q(a,b), midway down pg. 2
             for (k <- 0 until numCategs)
-                Q += logProbL(lij, k, alpha(i), beta(j))
+                Q += probZX(j)(k) * logProbL(lij, k, alpha(i), beta(j))
         }
 
-        // this isn't specified by the model, but seemed like a good idea to the authors:
+        /* this isn't specified by the model, but seemed like a good idea to the authors:
+        // I don't understand it, so I'm taking it out
         /* Add Gaussian (standard normal) prior for alpha and beta*/
         for (i <- 0 until numLabelers)
             Q += log(zScore(alpha(i) - priorAlpha(i)))
         for (j <- 0 until numItems)
             Q += log(zScore(beta(j) - priorBeta(j)))
+        */
 
         return Q
     }
