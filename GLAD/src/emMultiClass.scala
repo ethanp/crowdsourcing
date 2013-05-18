@@ -8,12 +8,15 @@ import math._
  */
 
 class MultiLabel {
-    var itemIdx  = 0
+    var itemIdx   = 0
     var labelerId = 0
     var label     = 0
 }
 
 object emMultiClass {
+
+    /* fields go in the heap */
+
     // read in from main of file
     val labels = new ArrayBuffer[MultiLabel]()
 
@@ -22,8 +25,8 @@ object emMultiClass {
     var numItems    = 0
     var numCategs   = 0
     val workers = new mutable.ArrayBuffer[String]()
-    val items = new mutable.ArrayBuffer[String]()
-    val categs = new mutable.ArrayBuffer[String]()
+    val items   = new mutable.ArrayBuffer[String]()
+    val categs  = new mutable.ArrayBuffer[String]()
 
     /* arrays sized according to above: */
 
@@ -35,16 +38,13 @@ object emMultiClass {
     var probZX = Array[Array[Double]]()
 
     // from M-step
-    var alpha      = Array[Double]()
-    var beta       = Array[Double]()
-    var dQdAlpha   = Array[Double]()
-    var dQdBeta    = Array[Double]()
+    var alpha    = Array[Double]()
+    var beta     = Array[Double]()
+    var dQdAlpha = Array[Double]()
+    var dQdBeta  = Array[Double]()
 
     // set as 1/K in main()
     var priorZk = 0.0
-
-    // for both intents and purposes
-    val THRESHOLD: Double = 1E-3
 
     def eStep() {
 
@@ -63,12 +63,14 @@ object emMultiClass {
 
         // "Exponentiate and renormalize"
         for (j <- 0 until numItems) {
+
             for (k <- 0 until numCategs)
                 probZX(j)(k) = exp(probZX(j)(k))
+
             val sum = probZX(j).sum
-            for (k <- 0 until numCategs) {
+
+            for (k <- 0 until numCategs)
                 probZX(j)(k) = probZX(j)(k) / sum
-            }
         }
     }
 
@@ -117,8 +119,8 @@ object emMultiClass {
         var Q = 0.0
 
         /* formula given as "Q = ..." on pg. 3 */
-        for (j <- 0 until numItems)
-            for (k <- 0 until numCategs)
+        for {j <- 0 until numItems
+             k <- 0 until numCategs}
                 Q += probZX(j)(k) * log(priorZk)
 
         for (label <- labels) {
@@ -130,7 +132,7 @@ object emMultiClass {
         }
 
         /* this isn't specified by the model, but seemed like a good idea to the authors:
-        // I don't understand it, so I'm taking it out
+        // I don't understand the point, so I'm taking it out
         /* Add Gaussian (standard normal) prior for alpha and beta*/
         for (i <- 0 until numLabelers)
             Q += log(zScore(alpha(i) - priorAlpha(i)))
@@ -148,8 +150,6 @@ object emMultiClass {
             beta(j) += stepSize * dQdBeta(j)
     }
 
-    // TODO: every time I "ascend", my score gets LOWER! that's not good.
-    // it's also not what happens in my Binary-case code.
     def doGradientAscent(iterations: Int, stepSize: Double, tolerance: Double) {
         var iteration = 0
         var oldQ = computeQ()
@@ -165,15 +165,12 @@ object emMultiClass {
 
     def MStep () {
         // the algorithm is very sensitive to the settings of these parameters
-        // (25, .001, .01) matches the given output on the original given data
         // for some value-sets, it won't ever terminate
-        doGradientAscent(35, .0001, .01)
+        doGradientAscent(2, .001, .01)
     }
 
     def delta(i: Int, j: Int) = if (i == j) 1 else 0
 
-    // This is NOT quite the formula they implemented; instead, it's from the derivation
-    // in the supplementary materials. I don't know why they didn't implement that themselves.
     def calcGradient () {
 
         // Theirs had this part
@@ -212,19 +209,24 @@ object emMultiClass {
         for (j <- 0 until numItems)
             printf("Beta[%d] = %f\n", j, exp(beta(j)))
 
-        for (j <- 0 until numItems)
-            for (k <- 0 until numCategs)
-                printf("P(%-10s=%10s) = %f\n", items(j), categs(k), probZX(j)(k))
+        for {j <- 0 until numItems
+             k <- 0 until numCategs}
+                printf("P(%-20s = %s) = %f\n", items(j), categs(k), probZX(j)(k))
+
+        for {j <- 0 until numItems
+             k <- 0 until numCategs
+             if (probZX(j)(k) == probZX(j).max)}
+            printf("%60s:\t\t%s\n", items(j), categs(k))
     }
 
     def EM () {
-        println("sum thin")
+        println("beginning EM")
 
         /* initialize starting values */
         alpha = priorAlpha.map(x => x)
-        beta = priorBeta.map(x => x)
+        beta  = priorBeta.map(x => x)
         dQdAlpha = new Array[Double](numLabelers)
-        dQdBeta = new Array[Double](numItems)
+        dQdBeta  = new Array[Double](numItems)
 
         var Q = computeQ()
         var lastQ = Q
@@ -233,49 +235,39 @@ object emMultiClass {
             lastQ = Q
             /* "Re-estimate P(Z|L,alpha,beta)" */
             eStep()
-            Q = computeQ()
             println("\nAfter E-Step:")
-            printf("Q = %f\n", Q)
+            printf("Q = %f\n", computeQ())
 
             MStep()
-
             Q = computeQ()
             printf("\nAfter M-Step:\n")
             printf("Q = %f\n", Q)
             printf("difference is %.7f\n\n", abs((Q-lastQ)/lastQ))
-        } while (abs((Q-lastQ)/lastQ) > THRESHOLD)
+        } while (abs((Q-lastQ)/lastQ) > 1E-3)
 
         eStep()
-        Q = computeQ()
-        printf("Q = %f\n", Q)
+        printf("Q = %f\n", computeQ())
 
         outputResults()
     }
     def main(args: Array[String]) {
-        println("hello world")
+        println("Reading Data")
 
         /* Read Data */
-        val dataLocation = "/Users/Ethan/Dropbox/MLease/AashishsCode/Crowd_Data/adaptedData/rawFiles/GAL/responses/AdultContent1_Responses.txt"
-        /*
-        // extract metadata from first line
-        numLabels   = something(0).toInt
-        numLabelers = something(1).toInt
-        numImages   = something(2).toInt
-        forPriorZ1  = something(3).toDouble
-        */
+        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
 
         // extract metadata from the data itself
         var stringArr = Array[String]()
 
-        for (line <- Source.fromFile(dataLocation).getLines()) {
+        for (line <- Source.fromFile(dataFile).getLines()) {
             stringArr = line.split("\t")
-            // store all metadata in array (implicit map [int -> dataName])
+            // store all metadata in array
             if (!workers.contains(stringArr(0)))
-                workers  += stringArr(0)
+                workers += stringArr(0)
             if (!items.contains(stringArr(1)))
-                items    += stringArr(1)
+                items += stringArr(1)
             if (!categs.contains(stringArr(2)))
-                categs   += stringArr(2)
+                categs += stringArr(2)
 
             val label = new MultiLabel()
 
@@ -286,7 +278,7 @@ object emMultiClass {
             labels += label
         }
 
-        numLabels = labels.length
+        numLabels   = labels.length
         numLabelers = workers.size
         numItems    = items.size
         numCategs   = categs.size
