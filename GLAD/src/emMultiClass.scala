@@ -96,8 +96,7 @@ object emMultiClass {
          * http://www.wolframalpha.com/input/?i=exp%28-exp%28x%29*y%29+with+x+from+0+to+10%2C+y+from+-10+to+1
          * The idea is that we're replacing it with e^b * a; IDK why they chose that,
          * but anyways that replacement would still be negative, but with
-         * a much smaller absolute value
-         */
+         * a much smaller absolute value */
         if (logSigma isNegInfinity) // this does happen periodically
             logSigma = exp(beta_j) * alpha_i
 
@@ -115,9 +114,7 @@ object emMultiClass {
     }
 
     def computeQ(): Double = {
-
         var Q = 0.0
-
         /* formula given as "Q = ..." on pg. 3 */
         for {j <- 0 until numItems
              k <- 0 until numCategs}
@@ -131,14 +128,11 @@ object emMultiClass {
                 Q += probZX(j)(k) * logProbL(lij, k, alpha(i), beta(j))
         }
 
-        /* this isn't specified by the model, but seemed like a good idea to the authors:
-        // I don't understand the point, so I'm taking it out
         /* Add Gaussian (standard normal) prior for alpha and beta*/
         for (i <- 0 until numLabelers)
             Q += log(zScore(alpha(i) - priorAlpha(i)))
         for (j <- 0 until numItems)
             Q += log(zScore(beta(j) - priorBeta(j)))
-        */
 
         return Q
     }
@@ -174,16 +168,16 @@ object emMultiClass {
     def calcGradient () {
 
         // Theirs had this part
-        /*
         for (i <- 0 until numLabelers)
             dQdAlpha(i) = alpha(i) - priorAlpha(i)
         for (j <- 0 until numItems)
             dQdBeta(j) = beta(j) - priorBeta(j)
-        */
 
         // Mine does this instead (it seems to make no difference)
+        /*
         dQdAlpha = Array.fill(numLabelers)(0.0)
         dQdBeta  = Array.fill(numItems)(0.0)
+        */
 
         for (label <- labels) {
             val i     = label.labelerId
@@ -211,12 +205,12 @@ object emMultiClass {
 
         for {j <- 0 until numItems
              k <- 0 until numCategs}
-                printf("P(%-20s = %s) = %f\n", items(j), categs(k), probZX(j)(k))
+                printf("P(%-40s = %s) = %f\n", items(j), categs(k), probZX(j)(k))
 
         for {j <- 0 until numItems
              k <- 0 until numCategs
              if (probZX(j)(k) == probZX(j).max)}
-            printf("%60s:\t\t%s\n", items(j), categs(k))
+            printf("%s: %s\n", categs(k), items(j))
     }
 
     def EM () {
@@ -244,10 +238,8 @@ object emMultiClass {
             printf("Q = %f\n", Q)
             printf("difference is %.7f\n\n", abs((Q-lastQ)/lastQ))
         } while (abs((Q-lastQ)/lastQ) > 1E-3)
-
         eStep()
         printf("Q = %f\n", computeQ())
-
         outputResults()
     }
     def main(args: Array[String]) {
@@ -256,11 +248,9 @@ object emMultiClass {
         /* Read Data */
         val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
 
-        // extract metadata from the data itself
-        var stringArr = Array[String]()
-
+        /* extract metadata from the data itself */
         for (line <- Source.fromFile(dataFile).getLines()) {
-            stringArr = line.split("\t")
+            val stringArr = line.split("\t")
             // store all metadata in array
             if (!workers.contains(stringArr(0)))
                 workers += stringArr(0)
