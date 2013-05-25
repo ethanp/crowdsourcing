@@ -5,12 +5,14 @@ import math._
 
 /*
     This is configured to read the GAL data "AdultContentX_Responses"
+
+    The way to clean this up a lot is to read the data in a different object,
+    then instantiate the emMultiClass object to perform all the calculations.
+     In that way it would use a lot more vals and a lot less vars.
  */
 
-class MultiLabel {
-    var itemIdx   = 0
-    var labelerId = 0
-    var label     = 0
+class MultiLabel(val i: Int, val j: Int, val lij: Int) {
+    def delta(k: Int) = if (k == lij) 1 else 0
 }
 
 object emMultiClass {
@@ -51,26 +53,14 @@ object emMultiClass {
         for (array <- 0 until numCategs)
             probZX(array) = Array.fill[Double](numCategs)(log(priorZk))
 
-        for (label <- labels) {
-            val i   = label.labelerId
-            val j   = label.itemIdx
-            val lij = label.label
-
-            for (k <- 0 until numCategs) {
-                probZX(j)(k) += logProbL(lij, k, alpha(i), beta(j))
-            }
-        }
+        for (label <- labels; categ <- 0 until numCategs)
+            probZX(label.j)(categ) += logProbL(label.lij, categ, alpha(label.i), beta(label.j))
 
         // "Exponentiate and renormalize"
         for (j <- 0 until numItems) {
-
-            for (k <- 0 until numCategs)
-                probZX(j)(k) = exp(probZX(j)(k))
-
+            probZX(j) = probZX(j).map(exp(_))
             val sum = probZX(j).sum
-
-            for (k <- 0 until numCategs)
-                probZX(j)(k) = probZX(j)(k) / sum
+            probZX(j) = probZX(j).map(_ / sum)
         }
     }
 
@@ -98,7 +88,7 @@ object emMultiClass {
          * but anyways that replacement would still be negative, but with
          * a much smaller absolute value */
         if (logSigma isNegInfinity) // this does happen periodically
-            logSigma = exp(beta_j) * alpha_i
+            exp(beta_j) * alpha_i
 
         logSigma
     }
@@ -108,7 +98,7 @@ object emMultiClass {
 
         // I don't understand why this makes sense, it DOES happen periodically though
         if (logOneMinusSigma isNegInfinity)
-            logOneMinusSigma = -exp(beta_j) * alpha_i
+            -exp(beta_j) * alpha_i
 
         logOneMinusSigma
     }
@@ -116,21 +106,17 @@ object emMultiClass {
     def computeQ(): Double = {
         var Q = 0.0
         /* formula given as "Q = ..." on pg. 3 */
-        for {j <- 0 until numItems
-             k <- 0 until numCategs}
-                Q += probZX(j)(k) * log(priorZk)
+        Q += probZX.flatten.map(_ * log(priorZk)).sum
 
         for (label <- labels) {
-            val i   = label.labelerId
-            val j   = label.itemIdx
-            val lij = label.label
             for (k <- 0 until numCategs)
-                Q += probZX(j)(k) * logProbL(lij, k, alpha(i), beta(j))
+                Q += probZX(label.j)(k) * logProbL(label.lij, k, alpha(label.i), beta(label.j))
         }
 
         /* Add Gaussian (standard normal) prior for alpha and beta*/
         for (i <- 0 until numLabelers)
             Q += log(zScore(alpha(i) - priorAlpha(i)))
+
         for (j <- 0 until numItems)
             Q += log(zScore(beta(j) - priorBeta(j)))
 
@@ -163,15 +149,11 @@ object emMultiClass {
         doGradientAscent(2, .001, .01)
     }
 
-    def delta(i: Int, j: Int) = if (i == j) 1 else 0
-
     def calcGradient () {
 
         // Theirs had this part
-        for (i <- 0 until numLabelers)
-            dQdAlpha(i) = alpha(i) - priorAlpha(i)
-        for (j <- 0 until numItems)
-            dQdBeta(j) = beta(j) - priorBeta(j)
+        dQdAlpha = for ((a, pA) <- alpha zip priorAlpha) yield a - pA
+        dQdBeta  = for ((b, pB) <- beta zip priorBeta) yield b - pB
 
         // Mine does this instead (it seems to make no difference)
         /*
@@ -179,18 +161,13 @@ object emMultiClass {
         dQdBeta  = Array.fill(numItems)(0.0)
         */
 
-        for (label <- labels) {
-            val i     = label.labelerId
-            val j     = label.itemIdx
-            val lij   = label.label
-            val sigma = getSigma(beta(j),alpha(i))
-
-
+        for (lbl <- labels) {
+            val sigma = getSigma(beta(lbl.j),alpha(lbl.i))
             for (k <- 0 until numCategs) {
-                dQdAlpha(i) += probZX(j)(k) * ((delta(lij,k) - sigma) * exp(beta(j)) +
-                        (1 - delta(lij,k)) * log(numCategs - 1))
-                dQdBeta(j) += probZX(j)(k) * ((delta(lij,k) - sigma) * alpha(i) +
-                        (1 - delta(lij,k)) * log(numCategs - 1))
+                dQdAlpha(lbl.i) += probZX(lbl.j)(k) * ((lbl.delta(k) - sigma) * exp(beta(lbl.j)) +
+                        (1 - lbl.delta(k)) * log(numCategs - 1))
+                dQdBeta(lbl.j) += probZX(lbl.j)(k) * ((lbl.delta(k) - sigma) * alpha(lbl.i) +
+                        (1 - lbl.delta(k)) * log(numCategs - 1))
             }
         }
     }
@@ -203,22 +180,20 @@ object emMultiClass {
         for (j <- 0 until numItems)
             printf("Beta[%d] = %f\n", j, exp(beta(j)))
 
-        for {j <- 0 until numItems
-             k <- 0 until numCategs}
+        for (j <- 0 until numItems; k <- 0 until numCategs)
                 printf("P(%-40s = %s) = %f\n", items(j), categs(k), probZX(j)(k))
 
-        for {j <- 0 until numItems
-             k <- 0 until numCategs
-             if (probZX(j)(k) == probZX(j).max)}
-            printf("%s: %s\n", categs(k), items(j))
+        for (j <- 0 until numItems; k <- 0 until numCategs)
+             if (probZX(j)(k) == probZX(j).max)
+                printf("%s: %s\n", categs(k), items(j))
     }
 
     def EM () {
         println("beginning EM")
 
         /* initialize starting values */
-        alpha = priorAlpha.map(x => x)
-        beta  = priorBeta.map(x => x)
+        alpha = priorAlpha.clone()
+        beta  = priorBeta.clone()
         dQdAlpha = new Array[Double](numLabelers)
         dQdBeta  = new Array[Double](numItems)
 
@@ -247,6 +222,7 @@ object emMultiClass {
 
         /* Read Data */
         val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
+//        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/WVSCM/WVSCM/workerResponsesMatlab.txt"
 
         /* extract metadata from the data itself */
         for (line <- Source.fromFile(dataFile).getLines()) {
@@ -259,13 +235,11 @@ object emMultiClass {
             if (!categs.contains(stringArr(2)))
                 categs += stringArr(2)
 
-            val label = new MultiLabel()
-
-            // store data itself in MultiLabel objects using mapped int from above arrays
-            label.labelerId = workers indexOf stringArr(0)
-            label.itemIdx   = items   indexOf stringArr(1)
-            label.label     = categs  indexOf stringArr(2)
-            labels += label
+            labels += new MultiLabel(
+                workers.indexOf(stringArr(0)),
+                items.indexOf(stringArr(1)),
+                categs.indexOf(stringArr(2))
+            )
         }
 
         numLabels   = labels.length
