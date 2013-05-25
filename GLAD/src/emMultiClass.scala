@@ -25,10 +25,10 @@ object emMultiClass {
     var numLabels   = 0
     var numLabelers = 0
     var numItems    = 0
-    var numCategs   = 0
+    var numClasses  = 0
     val workers = new mutable.ArrayBuffer[String]()
     val items   = new mutable.ArrayBuffer[String]()
-    val categs  = new mutable.ArrayBuffer[String]()
+    val classes  = new mutable.ArrayBuffer[String]()
 
     /* arrays sized according to above: */
 
@@ -50,11 +50,8 @@ object emMultiClass {
 
     def eStep() {
 
-        for (array <- 0 until numCategs)
-            probZX(array) = Array.fill[Double](numCategs)(log(priorZk))
-
-        for (label <- labels; categ <- 0 until numCategs)
-            probZX(label.j)(categ) += logProbL(label.lij, categ, alpha(label.i), beta(label.j))
+        for (lbl <- labels; categ <- 0 until numClasses)
+            probZX(lbl.j)(categ) = log(priorZk) + logProbL(lbl.lij, categ, alpha(lbl.i), beta(lbl.j))
 
         // "Exponentiate and renormalize"
         for (j <- 0 until numItems) {
@@ -68,57 +65,50 @@ object emMultiClass {
         if (z == l)
             getLogSigma(alpha, beta)
         else
-            -log(numCategs - 1) + getLogOneMinusSigma(alpha, beta)
+            -log(numClasses - 1) + getLogOneMinusSigma(alpha, beta)
     }
 
+    // pdf of Gaussian Distribution
     def zScore(x: Double): Double = 1/sqrt(2*Pi) * exp(-pow(x,2)/2)
 
     def getSigma(alpha: Double, beta: Double): Double = 1/(1 + exp(-exp(beta) * alpha))
 
     def getLogSigma(alpha_i: Double, beta_j: Double): Double = {
-        var logSigma = log(getSigma(alpha_i, beta_j))
+        val logSigma = log(getSigma(alpha_i, beta_j))
         /* NOTE: "WHY THE IF"
          * this would be neg-infinity if exp(-exp(beta(j)) * alpha(i))) ~= infinity
-         * which would happen if alpha_i < 0 && beta_j > 4-ish
-         * which would happen if it was a nefarious rater on an easy picture
-         * e.g. using alpha,beta = -5,5 = e^(5e^5) = 1.9 E 322 !
          * a bad PLOT can be found here:
          * http://www.wolframalpha.com/input/?i=exp%28-exp%28x%29*y%29+with+x+from+0+to+10%2C+y+from+-10+to+1
-         * The idea is that we're replacing it with e^b * a; IDK why they chose that,
-         * but anyways that replacement would still be negative, but with
-         * a much smaller absolute value */
-        if (logSigma isNegInfinity) // this does happen periodically
+         */
+        if (logSigma isNegInfinity) {// this does happen periodically
             exp(beta_j) * alpha_i
-
+            println("logSigma isNegInfinity")
+        }
         logSigma
     }
 
     def getLogOneMinusSigma(alpha_i: Double, beta_j: Double): Double = {
-        var logOneMinusSigma = log(1 - getSigma(alpha_i, beta_j))
-
-        // I don't understand why this makes sense, it DOES happen periodically though
-        if (logOneMinusSigma isNegInfinity)
+        val logOneMinusSigma = log(1 - getSigma(alpha_i, beta_j))
+        if (logOneMinusSigma isNegInfinity) {
             -exp(beta_j) * alpha_i
-
+            println("logOneMinusSigma isNegInfinity")
+        }
         logOneMinusSigma
     }
 
     def computeQ(): Double = {
-        var Q = 0.0
         /* formula given as "Q = ..." on pg. 3 */
-        Q += probZX.flatten.map(_ * log(priorZk)).sum
+        var Q = probZX.flatten.map(_ * log(priorZk)).sum
 
-        for (label <- labels) {
-            for (k <- 0 until numCategs)
+        for (label <- labels; k <- 0 until numClasses)
                 Q += probZX(label.j)(k) * logProbL(label.lij, k, alpha(label.i), beta(label.j))
-        }
 
         /* Add Gaussian (standard normal) prior for alpha and beta*/
         for (i <- 0 until numLabelers)
             Q += log(zScore(alpha(i) - priorAlpha(i)))
 
         for (j <- 0 until numItems)
-            Q += log(zScore(beta(j) - priorBeta(j)))
+            Q += log(zScore(exp(beta(j)) - exp(priorBeta(j))))
 
         return Q
     }
@@ -127,47 +117,57 @@ object emMultiClass {
         for (i <- 0 until numLabelers)
             alpha(i) += stepSize * dQdAlpha(i)
         for (j <- 0 until numItems)
-            beta(j) += stepSize * dQdBeta(j)
+            beta(j) = log(exp(beta(j)) + stepSize * dQdBeta(j))
     }
 
     def doGradientAscent(iterations: Int, stepSize: Double, tolerance: Double) {
         var iteration = 0
         var oldQ = computeQ()
         var Q = oldQ
+        var alphas = alpha.clone()
+        var betas = beta.clone()
         do {
             oldQ = Q
+            alphas = alpha.clone()
+            betas = beta.clone()
             calcGradient()
             ascend(stepSize)
             Q = computeQ()
             iteration += 1
-        } while (iteration < iterations && abs(Q - oldQ) > tolerance)
+        } while (iteration < iterations && abs((Q - oldQ)/oldQ) > tolerance && Q > oldQ)
+        if (Q < oldQ) {
+            alpha = alphas.clone()
+            beta = betas.clone()
+            println("\nAfter "+iteration+" iterations of M-step, Q-score fell.")
+        }
     }
 
-    def MStep () {
-        // the algorithm is very sensitive to the settings of these parameters
-        // for some value-sets, it won't ever terminate
-        doGradientAscent(2, .001, .01)
-    }
+    // It seems you have to make the step size very small in order for every iteration
+    // to actually increase the Q-score. I believe this is because there are so many
+    // adjustments to so many parameters on each iteration that it has a large affect
+    // on the resulting Q-score.
+    def MStep() { doGradientAscent(10000, 1E-4, 1E-10) }
 
-    def calcGradient () {
+    def calcGradient() {
+
+        /* NOTE: dQdBeta is in terms of the REAL beta,
+                    whereas the array is in terms of LOG beta */
 
         // Theirs had this part
         dQdAlpha = for ((a, pA) <- alpha zip priorAlpha) yield a - pA
-        dQdBeta  = for ((b, pB) <- beta zip priorBeta) yield b - pB
+        dQdBeta  = for ((b, pB) <- beta zip priorBeta) yield exp(b) - exp(pB)
 
         // Mine does this instead (it seems to make no difference)
-        /*
-        dQdAlpha = Array.fill(numLabelers)(0.0)
-        dQdBeta  = Array.fill(numItems)(0.0)
-        */
+//        dQdAlpha = Array.fill(numLabelers)(0.0)
+//        dQdBeta  = Array.fill(numItems)(0.0)
 
         for (lbl <- labels) {
             val sigma = getSigma(beta(lbl.j),alpha(lbl.i))
-            for (k <- 0 until numCategs) {
+            for (k <- 0 until numClasses) {
                 dQdAlpha(lbl.i) += probZX(lbl.j)(k) * ((lbl.delta(k) - sigma) * exp(beta(lbl.j)) +
-                        (1 - lbl.delta(k)) * log(numCategs - 1))
+                        (1 - lbl.delta(k)) * log(numClasses - 1))
                 dQdBeta(lbl.j) += probZX(lbl.j)(k) * ((lbl.delta(k) - sigma) * alpha(lbl.i) +
-                        (1 - lbl.delta(k)) * log(numCategs - 1))
+                        (1 - lbl.delta(k)) * log(numClasses - 1))
             }
         }
     }
@@ -175,17 +175,17 @@ object emMultiClass {
     def outputResults() {
 
         for (i <- 0 until numLabelers)
-            printf("Alpha[%d] = %f\n", i, alpha(i))
+            printf("Alpha[%d] = %f: %s\n", i, alpha(i), workers(i))
 
         for (j <- 0 until numItems)
-            printf("Beta[%d] = %f\n", j, exp(beta(j)))
+            printf("Beta[%d] = %f: %s\n", j, exp(beta(j)), items(j))
 
-        for (j <- 0 until numItems; k <- 0 until numCategs)
-                printf("P(%-40s = %s) = %f\n", items(j), categs(k), probZX(j)(k))
+//        for (j <- 0 until numItems; k <- 0 until numClasses)
+//                printf("P(%-40s = %s) = %f\n", items(j), classes(k), probZX(j)(k))
 
-        for (j <- 0 until numItems; k <- 0 until numCategs)
-             if (probZX(j)(k) == probZX(j).max)
-                printf("%s: %s\n", categs(k), items(j))
+//        for (j <- 0 until numItems; k <- 0 until numClasses)
+//             if (probZX(j)(k) == probZX(j).max)
+//                printf("%s: %s\n", classes(k), items(j))
     }
 
     def EM () {
@@ -198,20 +198,19 @@ object emMultiClass {
         dQdBeta  = new Array[Double](numItems)
 
         var Q = computeQ()
-        var lastQ = Q
+        var lastQ = Q  // must be initialized outside loop for use in while condition
 
         do {
             lastQ = Q
             /* "Re-estimate P(Z|L,alpha,beta)" */
             eStep()
-            println("\nAfter E-Step:")
-            printf("Q = %f\n", computeQ())
+            printf("\nAfter E-Step: Q = %f\n", computeQ())
 
+            /* Re-estimate alphas and betas */
             MStep()
             Q = computeQ()
-            printf("\nAfter M-Step:\n")
-            printf("Q = %f\n", Q)
-            printf("difference is %.7f\n\n", abs((Q-lastQ)/lastQ))
+            printf("\nAfter M-Step: Q = %f\n", Q)
+            printf("change-ratio is %.7f\n\n", abs((Q-lastQ)/lastQ))
         } while (abs((Q-lastQ)/lastQ) > 1E-3)
         eStep()
         printf("Q = %f\n", computeQ())
@@ -222,38 +221,43 @@ object emMultiClass {
 
         /* Read Data */
         val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
-//        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/WVSCM/WVSCM/workerResponsesMatlab.txt"
+
+//        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/WVSCM" +
+//                "/responses/WVSCM_Responses.txt"
+
+//        val dataFile = "../../OptimalLabelingRelease1.0.3/dataNoMeta.txt"
 
         /* extract metadata from the data itself */
         for (line <- Source.fromFile(dataFile).getLines()) {
-            val stringArr = line.split("\t")
+            val crowdLabel = line.split("\t")
             // store all metadata in array
-            if (!workers.contains(stringArr(0)))
-                workers += stringArr(0)
-            if (!items.contains(stringArr(1)))
-                items += stringArr(1)
-            if (!categs.contains(stringArr(2)))
-                categs += stringArr(2)
+            if (!workers.contains(crowdLabel(0)))
+                workers += crowdLabel(0)
+            if (!items.contains(crowdLabel(1)))
+                items += crowdLabel(1)
+            if (!classes.contains(crowdLabel(2)))
+                classes += crowdLabel(2)
 
             labels += new MultiLabel(
-                workers.indexOf(stringArr(0)),
-                items.indexOf(stringArr(1)),
-                categs.indexOf(stringArr(2))
+                workers indexOf crowdLabel(0),
+                items   indexOf crowdLabel(1),
+                classes indexOf crowdLabel(2)
             )
         }
+//        println(workers.indexOf("AZ1S5BIG5R6P6"))
 
         numLabels   = labels.length
         numLabelers = workers.size
         numItems    = items.size
-        numCategs   = categs.size
+        numClasses  = classes.size
 
         // initialize priors
         priorAlpha = Array.fill[Double](numLabelers)(1.0)
         priorBeta  = Array.fill[Double](numItems)(1.0)
-        priorZk    = 1.0 / numCategs  // set p(z_j = k) = 1/k
+        priorZk    = 1.0 / numClasses  // set p(z_j = k) = 1/k
         probZX     = new Array[Array[Double]](numItems)
         for (i <- 0 until numItems)
-            probZX(i) = new Array[Double](numCategs)
+            probZX(i) = new Array[Double](numClasses)
 
         EM()
     }
