@@ -11,9 +11,12 @@ object emMultiClass {
 
     // read in from main of file
     val labels  = new ArrayBuffer[MultiLabel]()
-    val workers = new mutable.ArrayBuffer[String]()
-    val items   = new mutable.ArrayBuffer[String]()
-    val classes = new mutable.ArrayBuffer[String]()
+    val workers = new ArrayBuffer[String]()
+    val items   = new ArrayBuffer[String]()
+    val classes = new ArrayBuffer[String]()
+
+    // read in from gold file if exists
+    val goldLabels = new mutable.HashMap[String, String]()
 
     // set according to data read in
     var numLabels   = 0
@@ -36,6 +39,10 @@ object emMultiClass {
     var beta     = Array[Double]()
     var dQdAlpha = Array[Double]()
     var dQdBeta  = Array[Double]()
+
+    // statistics
+    var correct = 0
+    var incorrect = 0
 
     def eStep() {
 
@@ -144,8 +151,8 @@ object emMultiClass {
         dQdBeta  = for ((b, pB) <- beta zip priorBeta) yield exp(b) - exp(pB)
 
         // Doing this instead seems to make no difference
-//        dQdAlpha = Array.fill(numLabelers)(0.0)
-//        dQdBeta  = Array.fill(numItems)(0.0)
+        //        dQdAlpha = Array.fill(numLabelers)(0.0)
+        //        dQdBeta  = Array.fill(numItems)(0.0)
 
         for (lbl <- labels) {
             val sigma = getSigma(beta(lbl.j),alpha(lbl.i))
@@ -167,12 +174,34 @@ object emMultiClass {
         for (j <- 0 until numItems)
             printf("Beta[%d] = %f: %s\n", j, exp(beta(j)), items(j))
 
-//        for (j <- 0 until numItems; k <- 0 until numClasses)
-//                printf("P(%-40s = %s) = %f\n", items(j), classes(k), probZX(j)(k))
+        //        for (j <- 0 until numItems; k <- 0 until numClasses)
+        //                printf("P(%-40s = %s) = %f\n", items(j), classes(k), probZX(j)(k))
 
-//        for (j <- 0 until numItems; k <- 0 until numClasses)
-//             if (probZX(j)(k) == probZX(j).max)
-//                printf("%s: %s\n", classes(k), items(j))
+        for (j <- 0 until numItems; k <- 0 until numClasses) {
+            if (probZX(j)(k) == probZX(j).max) {
+                printf("%s: %s", classes(k), items(j))
+                /* print gold label info and calculate accuracy */
+                if (goldLabels.size > 0) {
+                    if (show(goldLabels get items(j)) == "?")
+                        println(": No gold label")
+                    else if (show(goldLabels get items(j)) == classes(k)) {
+                        println(": Correct")
+                        correct += 1
+                    } else {
+                        println(": Incorrect")
+                        incorrect += 1
+                    }
+                }
+                else println()
+            }
+        }
+        /* print Accuracy */
+        if (goldLabels.size > 0) {
+            println("#Correct = "+correct)
+            println("#Incorrect = "+incorrect)
+            val accuracy = correct.asInstanceOf[Double] / (correct + incorrect)
+            println("Accuracy = "+accuracy)
+        }
     }
 
     def EM () {
@@ -196,12 +225,21 @@ object emMultiClass {
         printf("Final Q = %f\n", computeQ())
         outputResults()
     }
+
+    def show(x: Option[String]) = x match {
+        case Some(s) => s
+        case None => "?"
+    }
+
     def main(args: Array[String]) {
         println("Reading Data")
-        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
-//        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/WVSCM" +
-//                "/responses/WVSCM_Responses.txt"
-//        val dataFile = "../../OptimalLabelingRelease1.0.3/dataNoMeta.txt"
+        //        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
+        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/WVSCM" +
+                "/responses/WVSCM_Responses.txt"
+        //        val dataFile = "../../OptimalLabelingRelease1.0.3/dataNoMeta.txt"
+
+        val goldFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/WVSCM/" +
+                "gold/WVSCM_gold.txt"
 
         /* extract metadata from the data itself */
         for (line <- Source.fromFile(dataFile).getLines()) {
@@ -220,6 +258,13 @@ object emMultiClass {
                 classes indexOf crowdLabel(2)
             )
         }
+
+        /* read in goldFile */
+        for (line <- Source.fromFile(goldFile).getLines()) {
+            val goldData = line.split("\t")
+            goldLabels += ((goldData(0),goldData(1)))
+        }
+
         numLabels   = labels.length
         numLabelers = workers.size
         numItems    = items.size
