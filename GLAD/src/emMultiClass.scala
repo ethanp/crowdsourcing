@@ -3,6 +3,10 @@ import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 import math._
 
+/* Implementation of GLAD algorithm (Whitehill et al) adapted from their C-code,
+ * as well as a trial run of the Scala programming language
+ */
+
 class MultiLabel(val i: Int, val j: Int, val lij: Int) {
     def delta(k: Int) = if (k == lij) 1 else 0
 }
@@ -10,10 +14,11 @@ class MultiLabel(val i: Int, val j: Int, val lij: Int) {
 object emMultiClass {
 
     // read in from main of file
+
     val labels  = new ArrayBuffer[MultiLabel]()
-    val workers = new ArrayBuffer[String]()
-    val items   = new ArrayBuffer[String]()
-    val classes = new ArrayBuffer[String]()
+    val workers = new mutable.HashMap[String,Int]()
+    val items   = new mutable.HashMap[String,Int]()
+    val classes = new mutable.HashMap[String,Int]()
 
     // read in from gold file if exists
     val goldLabels = new mutable.HashMap[String, String]()
@@ -69,22 +74,22 @@ object emMultiClass {
     def getSigma(alpha: Double, beta: Double): Double = 1/(1 + exp(-exp(beta) * alpha))
 
     def getLogSigma(alpha_i: Double, beta_j: Double): Double = {
-        val logSigma = log(getSigma(alpha_i, beta_j))
+        var logSigma = log(getSigma(alpha_i, beta_j))
         /* NOTE: "WHY THE IF" (No longer gets tripped though)
          * http://www.wolframalpha.com/input/?i=exp%28-exp%28x%29*y%29+with+x+from+0+to+10%2C+y+from+-10+to+1
          */
-        if (logSigma isNegInfinity) {// this does happen periodically
-            exp(beta_j) * alpha_i
-            println("logSigma isNegInfinity")
+        if (logSigma isNegInfinity) {
+            logSigma = -exp(beta_j) * alpha_i
+//            println("logSigma isNegInfinity")
         }
         logSigma
     }
 
     def getLogOneMinusSigma(alpha_i: Double, beta_j: Double): Double = {
-        val logOneMinusSigma = log(1 - getSigma(alpha_i, beta_j))
+        var logOneMinusSigma = log(1 - getSigma(alpha_i, beta_j))
         if (logOneMinusSigma isNegInfinity) {
-            -exp(beta_j) * alpha_i
-            println("logOneMinusSigma isNegInfinity")
+            logOneMinusSigma = -exp(beta_j) * alpha_i
+//            println("logOneMinusSigma isNegInfinity")
         }
         logOneMinusSigma
     }
@@ -101,7 +106,7 @@ object emMultiClass {
             Q += log(gaussPDF(alpha(i) - priorAlpha(i)))
 
         for (j <- 0 until numItems)
-            Q += log(gaussPDF(exp(beta(j)) - exp(priorBeta(j))))  // had bug in original code
+            Q += log(gaussPDF(beta(j) - priorBeta(j)))  // had bug in original code
 
         return Q
     }
@@ -110,27 +115,25 @@ object emMultiClass {
         for (i <- 0 until numLabelers)
             alpha(i) += stepSize * dQdAlpha(i)
         for (j <- 0 until numItems)
-            beta(j) = log(exp(beta(j)) + stepSize * dQdBeta(j))  // had bug in original code
+            beta(j) = beta(j) + stepSize * dQdBeta(j)
     }
 
     def doGradientAscent(iterations: Int, stepSize: Double, tolerance: Double) {
         var iteration = 0
         var oldQ = computeQ()
         var Q = oldQ
-        var alphas = alpha.clone()
-        var betas = beta.clone()
+        var cloneTuple = (alpha.clone(),beta.clone())
         do {
             oldQ = Q
-            alphas = alpha.clone()
-            betas = beta.clone()
+            cloneTuple = (alpha.clone(),beta.clone())
             calcGradient()
             ascend(stepSize)
             Q = computeQ()
             iteration += 1
         } while (iteration < iterations && ((Q - oldQ)/oldQ).abs > tolerance && Q > oldQ)
         if (Q < oldQ) {
-            alpha = alphas.clone()
-            beta = betas.clone()
+            alpha = cloneTuple._1  // no way to do multiple RE-assignment like in python :(
+            beta = cloneTuple._2  // "Won't Fix": https://issues.scala-lang.org/browse/SI-1324
             println("\nAfter "+iteration+" iterations of M-step, Q-score fell.")
         }
     }
@@ -139,7 +142,7 @@ object emMultiClass {
     // to actually increase the Q-score. This may be because there are so many
     // many parameters adjusted on each iteration that they cumulatively have a large effect
     // on the Q-score.
-    def MStep() { doGradientAscent(10000, 1E-4, 1E-10) }
+    def MStep() { doGradientAscent(25, 1E-2, 1E-2) }
 
     def calcGradient() {
 
@@ -147,8 +150,16 @@ object emMultiClass {
                     whereas the array is in terms of LOG beta */
 
         // Original had this part
-        dQdAlpha = for ((a, pA) <- alpha zip priorAlpha) yield a - pA
-        dQdBeta  = for ((b, pB) <- beta zip priorBeta) yield exp(b) - exp(pB)
+        for (i <- 0 until numLabelers)
+            dQdAlpha(i) = -(alpha(i) - priorAlpha(i))
+
+        for (j <- 0 until numItems)
+            dQdBeta(j) = -(beta(j) - priorBeta(j))
+
+        /* I think doing this functionally is much slower
+        dQdAlpha = (alpha, priorAlpha).zipped.map(_ - _)
+        dQdBeta  = (beta, priorBeta).zipped.map(exp(_) - exp(_))
+        */
 
         // Doing this instead seems to make no difference
         //        dQdAlpha = Array.fill(numLabelers)(0.0)
@@ -156,8 +167,7 @@ object emMultiClass {
 
         for (lbl <- labels) {
             val sigma = getSigma(beta(lbl.j),alpha(lbl.i))
-            for (k <- 0 until numClasses) {
-                val delta: Int = lbl.delta(k)
+            for (k <- 0 until numClasses; val delta: Int = lbl.delta(k)) {
                 dQdAlpha(lbl.i) += probZX(lbl.j)(k) * ((delta - sigma) * exp(beta(lbl.j)) +
                         (1 - delta) * log(numClasses - 1))
                 dQdBeta(lbl.j) += probZX(lbl.j)(k) * ((delta - sigma) * alpha(lbl.i) +
@@ -168,23 +178,32 @@ object emMultiClass {
 
     def outputResults() {
 
+        val flippedWorkers = workers map {_.swap}
+        val flippedItems   = items   map {_.swap}
+        val flippedClasses = classes map {_.swap}
         for (i <- 0 until numLabelers)  // needs this loop to print the index
-            printf("Alpha[%d] = %f: %s\n", i, alpha(i), workers(i))
+            printf("Alpha[%d] = %f: %s\n", i, alpha(i), flippedWorkers.getOrElse(i, "ERROR"))
 
         for (j <- 0 until numItems)
-            printf("Beta[%d] = %f: %s\n", j, exp(beta(j)), items(j))
+            printf("Beta[%d] = %f: %s\n", j, exp(beta(j)), flippedItems.getOrElse(j, "ERROR"))
 
-        //        for (j <- 0 until numItems; k <- 0 until numClasses)
-        //                printf("P(%-40s = %s) = %f\n", items(j), classes(k), probZX(j)(k))
+                for (j <- 0 until numItems; k <- 0 until numClasses) {
+                        val theClass: String = flippedClasses.getOrElse(k, "ERROR")
+                        val theItem: String = flippedItems.getOrElse(j, "ERROR")
+                        printf("P(%s = %s) = %f\n", theItem, theClass, probZX(j)(k))
+                }
 
         for (j <- 0 until numItems; k <- 0 until numClasses) {
+            val theClass: String = flippedClasses.getOrElse(k, "ERROR")
+            val theItem: String = flippedItems.getOrElse(j, "ERROR")
             if (probZX(j)(k) == probZX(j).max) {
-                printf("%s: %s", classes(k), items(j))
+                printf("%s: %s", theClass, theItem)
                 /* print gold label info and calculate accuracy */
                 if (goldLabels.size > 0) {
-                    if (show(goldLabels get items(j)) == "?")
+                    val goldLabel = goldLabels.getOrElse(theItem, "?")
+                    if (goldLabel == "?")
                         println(": No gold label")
-                    else if (show(goldLabels get items(j)) == classes(k)) {
+                    else if (goldLabel == theClass) {
                         println(": Correct")
                         correct += 1
                     } else {
@@ -226,43 +245,41 @@ object emMultiClass {
         outputResults()
     }
 
-    def show(x: Option[String]) = x match {
-        case Some(s) => s
-        case None => "?"
-    }
-
     def main(args: Array[String]) {
         println("Reading Data")
-        //        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
-        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/WVSCM" +
-                "/responses/WVSCM_Responses.txt"
-        //        val dataFile = "../../OptimalLabelingRelease1.0.3/dataNoMeta.txt"
+//        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/GAL/responses/AdultContent2_Responses.txt"
+//        val dataFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/WVSCM" +
+//                "/responses/WVSCM_Responses.txt"
+                val dataFile = "../../OptimalLabelingRelease1.0.3/dataNoMeta.txt"
 
-        val goldFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/WVSCM/" +
-                "gold/WVSCM_gold.txt"
+//        val goldFile = "/Users/Ethan/ischool/crowdData/adaptedData/rawFiles/WVSCM/" +
+//                "gold/WVSCM_gold.txt"
+        val goldFile = ""
 
         /* extract metadata from the data itself */
         for (line <- Source.fromFile(dataFile).getLines()) {
             val crowdLabel = line.split("\t")
             // store all metadata in array
-            if (!workers.contains(crowdLabel(0)))
-                workers += crowdLabel(0)
-            if (!items.contains(crowdLabel(1)))
-                items += crowdLabel(1)
+            if (!workers.contains(crowdLabel(1)))
+                workers += (crowdLabel(1) -> workers.size)
+            if (!items.contains(crowdLabel(0)))
+                items += (crowdLabel(0) -> items.size)
             if (!classes.contains(crowdLabel(2)))
-                classes += crowdLabel(2)
+                classes += (crowdLabel(2) -> classes.size)
 
             labels += new MultiLabel(
-                workers indexOf crowdLabel(0),
-                items   indexOf crowdLabel(1),
-                classes indexOf crowdLabel(2)
+                workers getOrElse (crowdLabel(1),-1),
+                items   getOrElse (crowdLabel(0),-1),
+                classes getOrElse (crowdLabel(2),-1)
             )
         }
 
         /* read in goldFile */
-        for (line <- Source.fromFile(goldFile).getLines()) {
-            val goldData = line.split("\t")
-            goldLabels += ((goldData(0),goldData(1)))
+        if (goldFile != "") {
+            for (line <- Source.fromFile(goldFile).getLines()) {
+                val goldData = line.split("\t")
+                goldLabels += ((goldData(0),goldData(1)))
+            }
         }
 
         numLabels   = labels.length

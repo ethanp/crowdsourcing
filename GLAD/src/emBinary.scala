@@ -276,6 +276,7 @@ object emBinary {
 
         /* Read Data */
         val dataLocation = "../../OptimalLabelingRelease1.0.3/data.txt"
+//        val dataLocation = "/Users/Ethan/Downloads/responses.txt"
 //        val dataLocation = "/Users/Ethan/ischool/crowdData/adaptedData/WVSCM/WVSCM/workerResponses.txt"
         val lines = Source.fromFile(dataLocation).getLines()
         val something = lines.next().split(" ")
