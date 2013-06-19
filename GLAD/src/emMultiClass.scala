@@ -156,7 +156,7 @@ object emMultiClass {
         for (j <- 0 until numItems)
             dQdBeta(j) = -(beta(j) - priorBeta(j))
 
-        /* I think doing this functionally is much slower
+        /* I think doing this functionally is slower
         dQdAlpha = (alpha, priorAlpha).zipped.map(_ - _)
         dQdBeta  = (beta, priorBeta).zipped.map(exp(_) - exp(_))
         */
