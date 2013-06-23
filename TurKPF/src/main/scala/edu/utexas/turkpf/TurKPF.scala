@@ -26,13 +26,14 @@ case class BallotJob(qstn: Question)
     def utility_of_stopping_voting(): Double = ???
     def utility_of_voting(): Double = ???
     def decide_whether_to_vote(): Boolean = utility_of_voting < utility_of_stopping_voting
-    def get_addnl_ballot() {
+    def get_addnl_ballot(): Boolean = {
         /* pay for it */
         qstn.allowanceBalance -= ballotCost
 
         /* random worker gets chosen to vote */
         val worker = Random.shuffle(qstn.workers.toList).head
         worker.generateVote(qstn.difficulty)  // currently just updates 'vote' field
+        worker.vote
     }
 
     var votes = List[Boolean]()
@@ -42,14 +43,42 @@ case class BallotJob(qstn: Question)
     }
 }
 
-case class ParticleFilter(numParticles: Int, dist: RealDistribution)
+trait ParticleFilter
+{
+    val priorDistribution: Array[Double]
+    def updatePrior {propagate; observe; sample; re_estimate}
+    def propagate
+    def observe
+    def re_estimate
+    def sample
+}
+
+case class QualityDistribution(numParticles: Int, dist: RealDistribution)
+    extends ParticleFilter
 {
     val priorDistribution = dist.sample(numParticles)
-    def updatePrior {propagate; observe; re_estimate}
-    def propagate = ???
-    def observe = ???
-    def re_estimate = ???
-    def sample = ???
+
+    def propagate {} // [DTC] (eq. 1)
+
+    def observe {}
+
+    def re_estimate {}
+
+    def sample {}
+}
+
+case class ConditionalImprovementGivenTurker(numParticles: Int, dist: RealDistribution)
+    extends ParticleFilter
+{
+    val priorDistribution = dist.sample(numParticles)
+
+    def propagate   {}
+
+    def observe     {}
+
+    def re_estimate {}
+
+    def sample      {}
 }
 
 case class Turker(trueGX: Double, qstn: Question)
@@ -62,8 +91,8 @@ case class Turker(trueGX: Double, qstn: Question)
           0.5 * ((1 - qstn.q) * (accuracy(qstn.difficulty) - 0.5) +
           qstn.q * (accuracy(qstn.difficulty) - 1))
 
-    val conditionalImprovementGivenTurkerFunction =  // [DTC] § Experiments
-        ParticleFilter(100,
+    val turkerFctn =  // [DTC] § Experiments
+        ConditionalImprovementGivenTurker(100,
             new BetaDistribution(
                 10*find_improvementFunctionMean,
                 10*(1-find_improvementFunctionMean)))
@@ -90,11 +119,11 @@ case class Question(trueAnswer: Boolean, q: Double, dC: Double)
     val workerDist = new NormalDistribution(1,1)
 
     var qPrime = 0.0
-    def difficulty = 1 - pow((q - qPrime).abs, dC)
-    def utility = 1000 * (exp(q) - 1) / (exp(1) - 1)
-    def dStar = ???  // [DTC] (eq. 12)
+    def difficulty = 1 - pow((q - qPrime).abs, dC)      // [DTC] (eq. 2)
+    def utility = 1000 * (exp(q) - 1) / (exp(1) - 1)    // [DTC] § Experimental Setup
+    def dStar = ???                                     // [DTC] (eq. 12)
     val priorQualityDensityFctn =
-        ParticleFilter(100, new BetaDistribution(1, 9)) // [DTC] § Experimental Setup
+        QualityDistribution(100, new BetaDistribution(1, 9)) // [DTC] § Experimental Setup
 
     /* the 'belief state' */
     val joint_prob_dens_of_q_and_qPrime = ParticleFilter(100, new BetaDistribution(1,5)) // random parameters)
@@ -107,7 +136,6 @@ object FirstExperiment
     // what is this?? shouldn't it be a function of q?
     def initialArtifactQuality = new BetaDistribution(1,9).sample
 
-
     val improvementCost = .05
     val difficultyConstant = 0.5
     val lookaheadDepth = 3
@@ -115,14 +143,16 @@ object FirstExperiment
 
     val qstn = Question(trueAnswer=true, initialArtifactQuality, difficultyConstant)
 
-
     /* methods I'll probably want */
     def choose_action() {  // I don't think this is correctly implemented
-        if (decide_whether_to_vote)
-            BallotJob
-        if (utility_of_current_artifact > utility_of_voting &&
-            utility_of_current_artifact > utility_of_improvement_step)
+        if (utility_of_current_artifact > utility_of_ballot_job &&
+          utility_of_current_artifact > utility_of_improvement_step) {
             submit_final()
+        } else if (utility_of_ballot_job > utility_of_improvement_step) {
+            BallotJob
+        } else {
+            improvement_job()
+        }
     }
 
     def improvement_job() = ???
@@ -131,8 +161,9 @@ object FirstExperiment
 
     def update_posteriors_for_alphas() = ???
 
-
     def utility_of_improvement_step(): Double = ???
+
+    def utility_of_ballot_job(): Double = ???
 
     def re_estimate_worker_accuracy(workerIndex: Int) { ??? }
 
@@ -142,11 +173,9 @@ object FirstExperiment
 
     /* methods I have written */
     def utility_of_current_artifact(): Double = 25*qstn.q  // AI-AAI
-
 }
 
 object TestStuff extends App
 {
 
 }
-
