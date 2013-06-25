@@ -15,6 +15,9 @@ import scala.util.Random
 
 /* notes:
  *  Type Info: cmd-T
+ *
+ *  I could potentially make a general implementation just using the Normal Distribution,
+ *  and then turned it into a particle filter after getting that working?
  */
 
 case class BallotJob(qstn: Question)
@@ -22,7 +25,7 @@ case class BallotJob(qstn: Question)
     val ballotCost = .01
     def utility_of_stopping_voting(): Double = ???
     def utility_of_voting(): Double = ???
-    def decide_whether_to_vote: Boolean = utility_of_voting < utility_of_stopping_voting
+    def decide_whether_to_vote(): Boolean = utility_of_voting < utility_of_stopping_voting
     def get_addnl_ballot(): Boolean = {
         /* pay for it */
         qstn.allowanceBalance -= ballotCost
@@ -33,6 +36,7 @@ case class BallotJob(qstn: Question)
         worker.vote
     }
 
+
     var votes = List[Boolean]()
 
     while (decide_whether_to_vote) {
@@ -40,9 +44,9 @@ case class BallotJob(qstn: Question)
     }
 }
 
-abstract class ParticleFilter(numParticles: Int, dist: RealDistribution)
+trait ParticleFilter
 {
-    val priorDistribution = dist.sample(numParticles)
+    val priorDistribution: Array[Double]
     def updatePrior {propagate; observe; sample; re_estimate}
     def propagate
     def observe
@@ -50,11 +54,12 @@ abstract class ParticleFilter(numParticles: Int, dist: RealDistribution)
     def sample
 }
 
-/* prior quality estimate distribution f_Q (q) */
 case class QualityDistribution(numParticles: Int, dist: RealDistribution)
-    extends ParticleFilter(numParticles, dist)
+    extends ParticleFilter
 {
-    def propagate {} // [DTC] (eq. 1), => f_{Q'}(q') ::: Do I use Clustering here?
+    val priorDistribution = dist.sample(numParticles)
+
+    def propagate {} // [DTC] (eq. 1)
 
     def observe {}
 
@@ -63,23 +68,11 @@ case class QualityDistribution(numParticles: Int, dist: RealDistribution)
     def sample {}
 }
 
-/* f_{Q'|q,x} (q') */
 case class ConditionalImprovementGivenWorker(numParticles: Int, dist: RealDistribution)
-    extends ParticleFilter(numParticles, dist)
+    extends ParticleFilter
 {
-    def propagate   {}
+    val priorDistribution = dist.sample(numParticles)
 
-    def observe     {}
-
-    def re_estimate {}
-
-    def sample      {}
-}
-
-/* f_{Q,Q'} (q,q') -- the 'Belief State' */
-case class JointProbDensOfQAndQPrime(numParticles: Int, dist: RealDistribution)
-  extends ParticleFilter(numParticles, dist)
-{
     def propagate   {}
 
     def observe     {}
@@ -92,7 +85,7 @@ case class JointProbDensOfQAndQPrime(numParticles: Int, dist: RealDistribution)
 case class Worker(trueGX: Double, qstn: Question)
 {
     val learningRate = 0.05  // perhaps there is a better number to use here
-    var estGX: Double = 1    // set to the mean of the true distribution
+    var estGX: Double = 1    // was simply set to the mean of the true distribution
 
     def find_improvementFunctionMean: Double = // [DTC] (eq. 13)
         qstn.q +
@@ -115,7 +108,7 @@ case class Worker(trueGX: Double, qstn: Question)
         if(vote == qstn.trueAnswer)
             estGX -= qstn.difficulty * learningRate
         else
-            estGX += (1 - qstn.difficulty) * learningRate
+            estGX += (1-qstn.difficulty) * learningRate
     }
 
     def prob_true_given_qS(): Double = {
@@ -124,26 +117,26 @@ case class Worker(trueGX: Double, qstn: Question)
         else
             1 - accuracy(qstn.difficulty)
     }
-    def mean_f_Q_giv_q(): Double = ???   // find avg loc of particles in associated Particle Filter
-    def mean_f_QP_giv_qp(): Double = ??? // find avg loc of particles in associated Particle Filter
+    def mean_f_Q_giv_q() = ???      // find avg loc of particles in associated Particle Filter
+    def mean_f_QP_giv_qp() = ???    // find avg loc of particles in associated Particle Filter
 }
 
 case class Question(trueAnswer: Boolean, q: Double, dC: Double)
 {
-    var allowanceBalance: Double = 400  // the amount of $$ we start out with
+    val allowance: Int = 400  // the amount of $$ we start out with
+    var allowanceBalance: Double = allowance
 
-    /* [DTC] gmX "follow a bell shaped distribution" "average error coefficient gm=1" */
     val workerDist = new NormalDistribution(1,1)
 
     var qPrime = 0.0
     def difficulty = 1 - pow((q - qPrime).abs, dC)      // [DTC] (eq. 2)
     def utility = 1000 * (exp(q) - 1) / (exp(1) - 1)    // [DTC] § Experimental Setup
     def dStar = ???                                     // [DTC] (eq. 12)
-
     val priorQualityDensityFctn =
         QualityDistribution(100, new BetaDistribution(1, 9)) // [DTC] § Experimental Setup
 
-    val belief_state = JointProbDensOfQAndQPrime(100, new BetaDistribution(1,5)) // random parameters
+    /* the 'belief state' */
+    val joint_prob_dens_of_q_and_qPrime = ParticleFilter(100, new BetaDistribution(1,5)) // random parameters)
     val numTurkers = 1000
     val workers = Array.fill(numTurkers)(Worker(workerDist.sample, this))
 }
