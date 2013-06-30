@@ -59,7 +59,7 @@ case class QualityDistribution(numParticles: Int, dist: RealDistribution)
 {
     val priorDistribution = dist.sample(numParticles)
 
-    def propagate {} // [DTC] (eq. 1)
+    def predict {} // [DTC] (eq. 1)
 
     def observe {}
 
@@ -73,7 +73,7 @@ case class ConditionalImprovementGivenWorker(numParticles: Int, dist: RealDistri
 {
     val priorDistribution = dist.sample(numParticles)
 
-    def propagate   {}
+    def predict   {}
 
     def observe     {}
 
