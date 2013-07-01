@@ -18,13 +18,15 @@ import org.apache.commons.math3.distribution.{RealDistribution, BetaDistribution
 case class BallotJob(qstn: Question)
 {
     val ballotCost = .01
-    def utility_of_stopping_voting: Double = ???
-    def utility_of_voting: Double = ???
-    def need_another_vote: Boolean = utility_of_voting < utility_of_stopping_voting
-    def get_addnl_ballot(): Boolean = {
-        /* pay for it */
-        qstn.allowanceBalance -= ballotCost
 
+    def utility_of_stopping_voting: Double = ???
+
+    def utility_of_voting: Double = ???
+
+    def need_another_vote: Boolean = utility_of_voting < utility_of_stopping_voting
+
+    def get_addnl_ballot(): Boolean = {
+        qstn.allowanceBalance -= ballotCost  // pay for it
         qstn.WORKERS.generateVote(qstn.difficulty)
     }
 
@@ -38,7 +40,6 @@ case class BallotJob(qstn: Question)
 
 abstract class ParticleFilter(numParticles: Int, dist: RealDistribution, priorDistribution: Array[Double])
 {
-//    def updatePrior {predict; observe; sample; re_estimate}
     def predict: ParticleFilter
     def observe
     def re_estimate
@@ -61,20 +62,20 @@ case class QualityDistribution(numParticles: Int,
         q + 0.5 * ((1 - q) * (accuracy - 0.5) + q * (accuracy - 1))
     }
 
-    def workerFctn(q: Double) =  // [DTC] § Experimental Setup
-        new BetaDistribution(
-            10 * find_improvementFunctionMean(q),
-            10 * (1 - find_improvementFunctionMean(q)))
+    def workerFctn(q: Double) = {  // [DTC] § Experimental Setup
+        val mu = find_improvementFunctionMean(q)
+        new BetaDistribution(10 * mu, 10 * (1 - mu))
+    }
 
-    // [DTC] (eq. 1), => generate f_{ Q' | particle.q } (q') and sample from it (re-sampling if nec.)
+    // [DTC] (eq. 1), => generate f_{ Q' | particle.q } (q') and sample from it
     def predict: QualityDistribution =
         QualityDistribution(numParticles, dist, priorDistribution.map(workerFctn(_).sample), qstn)
 
-    def observe {}
+    def observe { ??? }
 
-    def re_estimate {}
+    def re_estimate { ??? }
 
-    def sample {}
+    def sample { ??? }
 }
 
 /* I am modelling all workers with just one instance
@@ -103,6 +104,7 @@ case class Workers(trueGX: Double, qstn: Question)
         else
             1 - accuracy(qstn.difficulty)
     }
+
     def mean_f_Q_giv_q(): Double = ???   // find avg loc of particles in associated Particle Filter
     def mean_f_QP_giv_qp(): Double = ??? // find avg loc of particles in associated Particle Filter
 }
@@ -175,7 +177,7 @@ object FirstExperiment
 
     /* I suppose one reason to make question a class, and not just bring it all
      * into this Experiment class, is so that MANY Questions can be run Per Experiment
-     *  I'ma start with just question though, and try and get that working first
+     *  I'ma start with just one question though, and try and get that working first
      */
     val QUESTION = Question(trueAnswer=true)
 }
