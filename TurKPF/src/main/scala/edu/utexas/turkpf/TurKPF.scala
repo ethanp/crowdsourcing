@@ -10,8 +10,6 @@
 
 import math._
 import org.apache.commons.math3.distribution.{RealDistribution, BetaDistribution, NormalDistribution}
-import scala.util.Random
-
 
 /* notes:
  *  Type Info: cmd-T
@@ -22,7 +20,7 @@ case class BallotJob(qstn: Question)
     val ballotCost = .01
     def utility_of_stopping_voting: Double = ???
     def utility_of_voting: Double = ???
-    def decide_whether_to_vote: Boolean = utility_of_voting < utility_of_stopping_voting
+    def need_another_vote: Boolean = utility_of_voting < utility_of_stopping_voting
     def get_addnl_ballot(): Boolean = {
         /* pay for it */
         qstn.allowanceBalance -= ballotCost
@@ -32,32 +30,45 @@ case class BallotJob(qstn: Question)
 
     var votes = List[Boolean]()
 
-    while (decide_whether_to_vote) {
+    while (need_another_vote) {
         votes ::= get_addnl_ballot()
     }
     qstn.WORKERS.updateGX(votes)
 }
 
-abstract class ParticleFilter(numParticles: Int, dist: RealDistribution)
+abstract class ParticleFilter(numParticles: Int, dist: RealDistribution, priorDistribution: Array[Double])
 {
-    val priorDistribution: Array[Double] = dist.sample(numParticles)
-    def updatePrior {predict; observe; sample; re_estimate}
-    def predict
+//    def updatePrior {predict; observe; sample; re_estimate}
+    def predict: ParticleFilter
     def observe
     def re_estimate
     def sample
 }
 
 /* prior quality estimate distribution f_Q (q) */
-case class QualityDistribution(numParticles: Int, dist: RealDistribution)
-    extends ParticleFilter(numParticles, dist)
+case class QualityDistribution(numParticles: Int,
+                               dist: RealDistribution,
+                               priorDistribution: Array[Double],
+                               qstn: Question)
+
+    extends ParticleFilter(numParticles, dist, priorDistribution)
 {
-    def predict {
-        priorDistribution map {
-            particle =>
-                ??? // generate f_{ Q' | particle.q } (q') and sample from it (re-sampling if nec.)
-        }
-    } // [DTC] (eq. 1), => f_{Q'}(q')
+    def this(numParticles: Int, dist: RealDistribution, qstn: Question) =
+        this(numParticles, dist, dist.sample(numParticles), qstn)
+
+    def find_improvementFunctionMean(q: Double): Double = { // [DTC] (eq. 13)
+        val accuracy: Double = qstn.WORKERS.accuracy(qstn.difficulty)
+        q + 0.5 * ((1 - q) * (accuracy - 0.5) + q * (accuracy - 1))
+    }
+
+    def workerFctn(q: Double) =  // [DTC] § Experimental Setup
+        new BetaDistribution(
+            10 * find_improvementFunctionMean(q),
+            10 * (1 - find_improvementFunctionMean(q)))
+
+    // [DTC] (eq. 1), => generate f_{ Q' | particle.q } (q') and sample from it (re-sampling if nec.)
+    def predict: QualityDistribution =
+        QualityDistribution(numParticles, dist, priorDistribution.map(workerFctn(_).sample), qstn)
 
     def observe {}
 
@@ -76,27 +87,14 @@ case class Workers(trueGX: Double, qstn: Question)
     val learningRate = 0.05
     var estGX: Double = 1    // set to the mean of the true distribution
 
-    def find_improvementFunctionMean: Double = // [DTC] (eq. 13)
-        qstn.q
-          + 0.5 * ((1 - qstn.q) * (accuracy(qstn.difficulty) - 0.5)
-          + qstn.q * (accuracy(qstn.difficulty) - 1))
-
-    def workerFctn =  // [DTC] § Experimental Setup
-            new BetaDistribution(
-                10 * find_improvementFunctionMean,
-                10 * (1 - find_improvementFunctionMean))
-
     def generateVote(d: Double): Boolean = random < accuracy(d) // [DTC] (eq. 3)
 
     def accuracy(d: Double) = 0.5 * (1 + pow(1-d, estGX))
 
     def updateGX(votes: List[Boolean]) {    // [DTC] (below eq. 12)
-        for (vote <- votes) {
-            if(vote == qstn.trueAnswer)
-                estGX -= qstn.difficulty * learningRate
-            else
-                estGX += (1 - qstn.difficulty) * learningRate
-        }
+        val (correct, incorrect) = votes.partition(_ == qstn.trueAnswer)
+        estGX -= correct.length * qstn.difficulty * learningRate  // higher GX means Worse worker
+        estGX += incorrect.length * (1 - qstn.difficulty) * learningRate
     }
 
     def prob_true_given_qS(): Double = {
@@ -119,37 +117,40 @@ case class Question(trueAnswer: Boolean)
     var q = INITIAL_QUALITY
     var qPrime = 0.0
     val WORKERS = Workers(WORKER_DIST.sample, QUESTION)
+    val priorQualityDensityFctn =
+        new QualityDistribution(100, new BetaDistribution(1, 9), this) // [DTC] § Experimental Setup
 
 
     def difficulty = 1 - pow((q - qPrime).abs, DIFFICULTY_CONSTANT)      // [DTC] (eq. 2)
+
     def estimated_artifact_utility = 1000 * (exp(q) - 1) / (exp(1) - 1)    // [DTC] § Experimental Setup
-    def dStar = ???                                     // [DTC] (eq. 12)
+
+    def dStar = ???  // [DTC] (eq. 12)
+
     def submit_final() = {
         println("Final Utility: " + estimated_artifact_utility)
         sys.exit(0)
     }
+
     def choose_action() {
         if (estimated_artifact_utility > utility_of_ballot_job
-         && estimated_artifact_utility > utility_of_improvement_step)
+         && estimated_artifact_utility > utility_of_improvement_job)
             submit_final()
-        else if (utility_of_ballot_job > utility_of_improvement_step)
+        else if (utility_of_ballot_job > utility_of_improvement_job)
             BallotJob
         else
             improvement_job()
     }
 
-    val priorQualityDensityFctn =
-        QualityDistribution(100, new BetaDistribution(1, 9)) // [DTC] § Experimental Setup
+    def improvement_job(): QualityDistribution = priorQualityDensityFctn.predict
 
 
     /******* UNIMPLEMENTED **********/
-    def improvement_job() = ???
-
     def estimate_prior_for_alphaPrime() = ???
 
     def update_posteriors_for_alphas() = ???
 
-    def utility_of_improvement_step: Double = ???
+    def utility_of_improvement_job: Double = ???
 
     def utility_of_ballot_job: Double = ???
 
@@ -170,17 +171,13 @@ object FirstExperiment
     val DIFFICULTY_CONSTANT = 0.5
     val LOOKAHEAD_DEPTH = 3
     val NUM_QUESTIONS = 10000
-    val INITIAL_ALLOWANCE: Double = 400
+    val INITIAL_ALLOWANCE = 400.0
 
     /* I suppose one reason to make question a class, and not just bring it all
      * into this Experiment class, is so that MANY Questions can be run Per Experiment
      *  I'ma start with just question though, and try and get that working first
      */
     val QUESTION = Question(trueAnswer=true)
-
 }
 
-object TestStuff extends App
-{
-
-}
+object TestStuff extends App {}
