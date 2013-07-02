@@ -95,13 +95,16 @@ case class Workers(trueGX: Double)
     val learningRate = 0.05
     var estGX: Double = 1    // set to the mean of the true distribution
 
-    def generateVote(difficulty: Double): Boolean = random < accuracy(difficulty) // [DTC] (eq. 3)
+    // [DTC] (eq. 3)
+    def generateVote(difficulty: Double): Boolean = random < accuracy(difficulty)
 
-    def accuracy(difficulty: Double) = 0.5 * (1 + pow(1-difficulty, estGX)) // [DTC] (above eq. 3)
+    // [DTC] (above eq. 3)
+    def accuracy(difficulty: Double) = 0.5 * (1 + pow(1-difficulty, estGX))
 
+    // higher GX means Worse worker
     def updateGX(votes: List[Boolean]) {    // [DTC] (below eq. 12)
         val (correct, incorrect) = votes.partition(_ == qstn.trueAnswer)
-        estGX -= correct.length * qstn.artifact_difficulty * learningRate  // higher GX means Worse worker
+        estGX -= correct.length * qstn.artifact_difficulty * learningRate
         estGX += incorrect.length * (1 - qstn.artifact_difficulty) * learningRate
     }
 
@@ -118,18 +121,27 @@ case class Question(trueAnswer: Boolean)
     var balance = INITIAL_ALLOWANCE
     var qlty = INITIAL_QUALITY
     var qltyPrime = 0.0
+
+    // [DTC] trueGX > 0; code is dist-agnostic
     var workerTrueGm = WORKER_DIST.sample
-    while (workerTrueGm < 0) workerTrueGm = WORKER_DIST.sample  // [DTC] trueGX > 0; code is dist-agnostic
+    while (workerTrueGm < 0) workerTrueGm = WORKER_DIST.sample
+
     val WORKERS = Workers(workerTrueGm)
+
+    // [DTC] § Experimental Setup
     val f_Q_of_q =
-        new QualityDistribution(NUM_PARTICLES, new BetaDistribution(1, 9)) // [DTC] § Experimental Setup
+        new QualityDistribution(NUM_PARTICLES, new BetaDistribution(1, 9))
 
 
     def artifact_difficulty: Double = difficulty(qlty, qltyPrime)
 
-    def difficulty(qlty: Double, qltyPrime: Double): Double = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT) // [DTC] (eq. 2)
+    // [DTC] (eq. 2)
+    def difficulty(qlty: Double, qltyPrime: Double): Double = {
+        1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
+    }
 
-    def artifact_utility: Double = estimate_artifact_utility(qlty) + balance * UTILITY_OF_$$$  // was including $$ correct?
+    // was including $$ correct?
+    def artifact_utility: Double = estimate_artifact_utility(qlty) + balance * UTILITY_OF_$$$
 
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
         dist.particles.foldLeft(0.0)(
@@ -187,13 +199,15 @@ case class Question(trueAnswer: Boolean)
 
 object FirstExperiment
 {
-    /* [DTC] gmX "follow a bell shaped distribution" "average error coefficient gm=1", although gmX > 0 */
+    /* [DTC] gmX "follow a bell shaped distribution" "average error coefficient gm=1",
+     *      although note that gmX > 0 */
     val WORKER_DIST = new NormalDistribution(1,1)
 
     /* this is a method so that it generates a new initial quality every time a question starts */
     def INITIAL_QUALITY = new BetaDistribution(1,9).sample
 
-    def estimate_artifact_utility(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)    // [DTC] § Experimental Setup
+    // [DTC] § Experimental Setup
+    def estimate_artifact_utility(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)
 
     val IMPROVEMENT_COST    = .05
     val DIFFICULTY_CONSTANT = 0.5
@@ -201,7 +215,7 @@ object FirstExperiment
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 400.0
     val NUM_PARTICLES       = 10000
-    val UTILITY_OF_$$$      = 5.0   // of course it's situation-dependent, but figure out a good # to Actually put here
+    val UTILITY_OF_$$$      = 5.0   // of course it's situation-dependent, but put a Good # here
 
     /*
      * I suppose one reason to make question a class, and not just bring it all
