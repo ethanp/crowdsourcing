@@ -19,21 +19,20 @@ import FirstExperiment._
  *  Type Info: cmd-T
  */
 
-case class BallotJob(qstn: Question)
+case class BallotJob()
 {
     val ballotCost = .01
 
     /* TODO doesn't incorporate the observation value of having obtained the ballots */
-    def utility_of_stopping_voting: Double = {  // [DTC] (eq. 9)
-        max(
-            qstn.f_Q_of_q.particles  // [DTC] (eq. 10)
-              .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES)),
+    // [DTC] (eq. 9)
+    def utility_of_stopping_voting: Double = {max(
+        qstn.f_Q_of_q.particles  // [DTC] (eq. 10)
+          .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES)),
 
-            // TODO this is a bit of a placeholder, the "PREDICT" /SHOULD/ have been done already by this point
-            qstn.f_Q_of_q.predict.particles  // [DTC] (eq. 11)
-              .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES))
-        )
-    }
+        // TODO this is a bit of a placeholder, the "PREDICT" /SHOULD/ have been done already by this point
+        qstn.f_Q_of_q.predict.particles  // [DTC] (eq. 11)
+          .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES))
+    )}
 
     def utility_of_voting: Double = ???
 
@@ -55,11 +54,10 @@ case class BallotJob(qstn: Question)
 /* prior quality estimate distribution f_Q (q) */
 case class QualityDistribution(numParticles: Int,
                                dist: RealDistribution,
-                               particles: Array[Double],
-                               qstn: Question)
+                               particles: Array[Double])
 {
-    def this(numParticles: Int, dist: RealDistribution, qstn: Question) =
-        this(numParticles, dist, dist.sample(numParticles), qstn)
+    def this(numParticles: Int, dist: RealDistribution) =
+        this(numParticles, dist, dist.sample(numParticles))
 
     def find_improvementFunctionMean(qlty: Double): Double = { // [DTC] (eq. 13)
         val accuracy: Double = qstn.WORKERS.accuracy(qstn.difficulty)
@@ -73,10 +71,10 @@ case class QualityDistribution(numParticles: Int,
 
     // [DTC] (eq. 1), q => generate f_{ Q' | particle.q } (q') and sample from it
     def predict: QualityDistribution =
-        QualityDistribution(numParticles, dist, particles map {improvementDistr(_).sample}, qstn)
+        QualityDistribution(numParticles, dist, particles map {improvementDistr(_).sample})
 
     // [DTC] (eqs. 4-6)
-    def observe { ??? }
+    def observe(vote: Boolean): QualityDistribution = { ??? }
 
     def re_estimate { ??? }
 
@@ -94,7 +92,7 @@ case class QualityDistribution(numParticles: Int,
  *  and multiple worker-dependent models
  * in order to simply my life a bit
  */
-case class Workers(trueGX: Double, qstn: Question)
+case class Workers(trueGX: Double)
 {
     val learningRate = 0.05
     var estGX: Double = 1    // set to the mean of the true distribution
@@ -125,9 +123,9 @@ case class Question(trueAnswer: Boolean)
     var qltyPrime = 0.0
     var workerTrueGm = WORKER_DIST.sample
     while (workerTrueGm < 0) workerTrueGm = WORKER_DIST.sample  // [DTC] trueGX > 0; code is dist-agnostic
-    val WORKERS = Workers(workerTrueGm, QUESTION)
+    val WORKERS = Workers(workerTrueGm)
     val f_Q_of_q =
-        new QualityDistribution(NUM_PARTICLES, new BetaDistribution(1, 9), this) // [DTC] § Experimental Setup
+        new QualityDistribution(NUM_PARTICLES, new BetaDistribution(1, 9)) // [DTC] § Experimental Setup
 
 
     def difficulty = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)      // [DTC] (eq. 2)
@@ -159,7 +157,18 @@ case class Question(trueAnswer: Boolean)
 
     def update_posteriors_for_alphas() = ???
 
-    def utility_of_improvement_job: Double = ???
+    // note this is a copy-paste of utility_of_stopping_voting, that IS what the paper says to do though.
+    // top-right of page 4
+    def utility_of_improvement_job: Double = {
+        max(
+            qstn.f_Q_of_q.particles  // TODO extract this into a method. Note how it is also used for utility_of_stopping_voting
+              .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES)),
+
+            qstn.f_Q_of_q.predict.particles
+              .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES))
+
+        ) - IMPROVEMENT_COST * UTILITY_OF_$$$
+    }
 
     def utility_of_ballot_job: Double = ???
 
@@ -178,19 +187,20 @@ object FirstExperiment
 
     def estimate_artifact_utility(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)    // [DTC] § Experimental Setup
 
-    val IMPROVEMENT_COST = .05
+    val IMPROVEMENT_COST    = .05
     val DIFFICULTY_CONSTANT = 0.5
-    val LOOKAHEAD_DEPTH = 3
-    val NUM_QUESTIONS = 10000
-    val INITIAL_ALLOWANCE = 400.0
-    val NUM_PARTICLES = 10000
+    val LOOKAHEAD_DEPTH     = 3
+    val NUM_QUESTIONS       = 10000
+    val INITIAL_ALLOWANCE   = 400.0
+    val NUM_PARTICLES       = 10000
+    val UTILITY_OF_$$$      = 5.0   // of course it's situation-dependent, but figure out a good # to Actually put here
 
     /*
      * I suppose one reason to make question a class, and not just bring it all
      * into this Experiment class, is so that MANY Questions can be run Per Experiment
      *  I'ma start with just one question though, and try and get that working first
      */
-    val QUESTION = Question(trueAnswer=true)
+    val qstn = Question(trueAnswer=true)
 }
 
 object TestStuff extends App {}
