@@ -11,6 +11,10 @@
 import math._
 import org.apache.commons.math3.distribution.{RealDistribution, BetaDistribution, NormalDistribution}
 
+/* this means I can choose all new parameters by replacing this line with
+ *  import SecondExperiment._  and so on  */
+import FirstExperiment._
+
 /* notes:
  *  Type Info: cmd-T
  */
@@ -19,14 +23,25 @@ case class BallotJob(qstn: Question)
 {
     val ballotCost = .01
 
-    def utility_of_stopping_voting: Double = ???
+    /* I don't think this is right because the "priorQualityDensityFctn"
+     * TODO doesn't incorporate the observation value of having obtained the ballots */
+    def utility_of_stopping_voting: Double = {  // [DTC] (eq. 9)
+        max(
+            qstn.priorQualityDensityFctn.priorDistr  // [DTC] (eq. 10)
+              .foldLeft(0.0)((sum,particle) => sum + (qstn.estimated_artifact_utility(particle)/NUM_PARTICLES)),
+
+            // TODO this is a bit of a placeholder, the "PREDICT" /SHOULD/ have been done already by this point
+            qstn.priorQualityDensityFctn.predict.priorDistr  // [DTC] (eq. 11)
+              .foldLeft(0.0)((sum,particle) => sum + (qstn.estimated_artifact_utility(particle)/NUM_PARTICLES))
+        )
+    }
 
     def utility_of_voting: Double = ???
 
     def need_another_vote: Boolean = utility_of_voting < utility_of_stopping_voting
 
     def get_addnl_ballot(): Boolean = {
-        qstn.allowanceBalance -= ballotCost  // pay for it
+        qstn.balance -= ballotCost  // pay for it
         qstn.WORKERS.generateVote(qstn.difficulty)
     }
 
@@ -49,27 +64,27 @@ abstract class ParticleFilter(numParticles: Int, dist: RealDistribution, priorDi
 /* prior quality estimate distribution f_Q (q) */
 case class QualityDistribution(numParticles: Int,
                                dist: RealDistribution,
-                               priorDistribution: Array[Double],
+                               priorDistr: Array[Double],
                                qstn: Question)
 
-    extends ParticleFilter(numParticles, dist, priorDistribution)
+    extends ParticleFilter(numParticles, dist, priorDistr)
 {
     def this(numParticles: Int, dist: RealDistribution, qstn: Question) =
         this(numParticles, dist, dist.sample(numParticles), qstn)
 
-    def find_improvementFunctionMean(q: Double): Double = { // [DTC] (eq. 13)
+    def find_improvementFunctionMean(qlty: Double): Double = { // [DTC] (eq. 13)
         val accuracy: Double = qstn.WORKERS.accuracy(qstn.difficulty)
-        q + 0.5 * ((1 - q) * (accuracy - 0.5) + q * (accuracy - 1))
+        qlty + 0.5 * ((1 - qlty) * (accuracy - 0.5) + qlty * (accuracy - 1))
     }
 
-    def workerFctn(q: Double) = {  // [DTC] § Experimental Setup
-        val mu = find_improvementFunctionMean(q)
+    def improvementDistr(qlty: Double) = {  // [DTC] § Experimental Setup
+        val mu = find_improvementFunctionMean(qlty)
         new BetaDistribution(10 * mu, 10 * (1 - mu))
     }
 
-    // [DTC] (eq. 1), => generate f_{ Q' | particle.q } (q') and sample from it
+    // [DTC] (eq. 1), q => generate f_{ Q' | particle.q } (q') and sample from it
     def predict: QualityDistribution =
-        QualityDistribution(numParticles, dist, priorDistribution.map(workerFctn(_).sample), qstn)
+        QualityDistribution(numParticles, dist, priorDistr map {improvementDistr(_).sample}, qstn)
 
     def observe { ??? }
 
@@ -88,9 +103,9 @@ case class Workers(trueGX: Double, qstn: Question)
     val learningRate = 0.05
     var estGX: Double = 1    // set to the mean of the true distribution
 
-    def generateVote(d: Double): Boolean = random < accuracy(d) // [DTC] (eq. 3)
+    def generateVote(difficulty: Double): Boolean = random < accuracy(difficulty) // [DTC] (eq. 3)
 
-    def accuracy(d: Double) = 0.5 * (1 + pow(1-d, estGX))
+    def accuracy(difficulty: Double) = 0.5 * (1 + pow(1-difficulty, estGX)) // [DTC] (above eq. 3)
 
     def updateGX(votes: List[Boolean]) {    // [DTC] (below eq. 12)
         val (correct, incorrect) = votes.partition(_ == qstn.trueAnswer)
@@ -111,32 +126,30 @@ case class Workers(trueGX: Double, qstn: Question)
 
 case class Question(trueAnswer: Boolean)
 {
-    /* this means I can choose all new parameters by replacing this line with
-     *  import SecondExperiment._  and so on  */
-    import FirstExperiment._
-
-    var allowanceBalance = INITIAL_ALLOWANCE
-    var q = INITIAL_QUALITY
-    var qPrime = 0.0
-    val WORKERS = Workers(WORKER_DIST.sample, QUESTION)
+    var balance = INITIAL_ALLOWANCE
+    var qlty = INITIAL_QUALITY
+    var qltyPrime = 0.0
+    var workerTrueGm = WORKER_DIST.sample
+    while (workerTrueGm < 0) workerTrueGm = WORKER_DIST.sample  // [DTC] trueGX > 0; code is dist-agnostic
+    val WORKERS = Workers(workerTrueGm, QUESTION)
     val priorQualityDensityFctn =
-        new QualityDistribution(100, new BetaDistribution(1, 9), this) // [DTC] § Experimental Setup
+        new QualityDistribution(NUM_PARTICLES, new BetaDistribution(1, 9), this) // [DTC] § Experimental Setup
 
 
-    def difficulty = 1 - pow((q - qPrime).abs, DIFFICULTY_CONSTANT)      // [DTC] (eq. 2)
+    def difficulty = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)      // [DTC] (eq. 2)
 
-    def estimated_artifact_utility = 1000 * (exp(q) - 1) / (exp(1) - 1)    // [DTC] § Experimental Setup
+    def estimated_artifact_utility(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)    // [DTC] § Experimental Setup
 
     def dStar = ???  // [DTC] (eq. 12)
 
     def submit_final() = {
-        println("Final Utility: " + estimated_artifact_utility)
+        println("Final Utility: " + estimated_artifact_utility(qlty))
         sys.exit(0)
     }
 
     def choose_action() {
-        if (estimated_artifact_utility > utility_of_ballot_job
-         && estimated_artifact_utility > utility_of_improvement_job)
+        if (estimated_artifact_utility(qlty) > utility_of_ballot_job
+         && estimated_artifact_utility(qlty) > utility_of_improvement_job)
             submit_final()
         else if (utility_of_ballot_job > utility_of_improvement_job)
             BallotJob
@@ -163,7 +176,7 @@ case class Question(trueAnswer: Boolean)
 
 object FirstExperiment
 {
-    /* [DTC] gmX "follow a bell shaped distribution" "average error coefficient gm=1" */
+    /* [DTC] gmX "follow a bell shaped distribution" "average error coefficient gm=1", although gmX > 0 */
     val WORKER_DIST = new NormalDistribution(1,1)
 
     /* this is a method so that it generates a new initial quality every time a question starts */
@@ -174,8 +187,10 @@ object FirstExperiment
     val LOOKAHEAD_DEPTH = 3
     val NUM_QUESTIONS = 10000
     val INITIAL_ALLOWANCE = 400.0
+    val NUM_PARTICLES = 10000
 
-    /* I suppose one reason to make question a class, and not just bring it all
+    /*
+     * I suppose one reason to make question a class, and not just bring it all
      * into this Experiment class, is so that MANY Questions can be run Per Experiment
      *  I'ma start with just one question though, and try and get that working first
      */
