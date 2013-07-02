@@ -26,12 +26,10 @@ case class BallotJob()
     /* TODO doesn't incorporate the observation value of having obtained the ballots */
     // [DTC] (eq. 9)
     def utility_of_stopping_voting: Double = {max(
-        qstn.f_Q_of_q.particles  // [DTC] (eq. 10)
-          .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES)),
+        qstn.convolute_Utility_with_Particles(qstn.f_Q_of_q),  // [DTC] (eq. 10)
 
         // TODO this is a bit of a placeholder, the "PREDICT" /SHOULD/ have been done already by this point
-        qstn.f_Q_of_q.predict.particles  // [DTC] (eq. 11)
-          .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES))
+        qstn.convolute_Utility_with_Particles(qstn.f_Q_of_q.predict)  // [DTC] (eq. 11)
     )}
 
     def utility_of_voting: Double = ???
@@ -40,7 +38,7 @@ case class BallotJob()
 
     def get_addnl_ballot(): Boolean = {
         qstn.balance -= ballotCost  // pay for it
-        qstn.WORKERS.generateVote(qstn.difficulty)
+        qstn.WORKERS.generateVote(qstn.artifact_difficulty)
     }
 
     var votes = List[Boolean]()
@@ -60,7 +58,7 @@ case class QualityDistribution(numParticles: Int,
         this(numParticles, dist, dist.sample(numParticles))
 
     def find_improvementFunctionMean(qlty: Double): Double = { // [DTC] (eq. 13)
-        val accuracy: Double = qstn.WORKERS.accuracy(qstn.difficulty)
+        val accuracy: Double = qstn.WORKERS.accuracy(qstn.artifact_difficulty)
         qlty + 0.5 * ((1 - qlty) * (accuracy - 0.5) + qlty * (accuracy - 1))
     }
 
@@ -103,15 +101,15 @@ case class Workers(trueGX: Double)
 
     def updateGX(votes: List[Boolean]) {    // [DTC] (below eq. 12)
         val (correct, incorrect) = votes.partition(_ == qstn.trueAnswer)
-        estGX -= correct.length * qstn.difficulty * learningRate  // higher GX means Worse worker
-        estGX += incorrect.length * (1 - qstn.difficulty) * learningRate
+        estGX -= correct.length * qstn.artifact_difficulty * learningRate  // higher GX means Worse worker
+        estGX += incorrect.length * (1 - qstn.artifact_difficulty) * learningRate
     }
 
     def prob_true_given_Qs: Double = {
         if (qstn.f_Q_of_q.meanQltyEst < qstn.f_Q_of_q.meanQltyEstPrime)
-            accuracy(qstn.difficulty)
+            accuracy(qstn.artifact_difficulty)
         else
-            1 - accuracy(qstn.difficulty)
+            1 - accuracy(qstn.artifact_difficulty)
     }
 
 }
@@ -128,11 +126,27 @@ case class Question(trueAnswer: Boolean)
         new QualityDistribution(NUM_PARTICLES, new BetaDistribution(1, 9)) // [DTC] § Experimental Setup
 
 
-    def difficulty = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)      // [DTC] (eq. 2)
+    def artifact_difficulty: Double = difficulty(qlty, qltyPrime)
 
-    def artifact_utility: Double = estimate_artifact_utility(qlty)  // TODO shouldn't this include the utility of $$$ ??
+    def difficulty(qlty: Double, qltyPrime: Double): Double = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT) // [DTC] (eq. 2)
 
-    def dStar = ???  // [DTC] (eq. 12)
+    def artifact_utility: Double = estimate_artifact_utility(qlty) + balance * UTILITY_OF_$$$  // was including $$ correct?
+
+    def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
+        dist.particles.foldLeft(0.0)(
+            (sum, particle) =>
+                sum + (estimate_artifact_utility(particle)/NUM_PARTICLES))
+    }
+
+    // [DTC] (eq. 12)
+    // this is O(numParticles^2)...they also note that this equation takes a while
+    def dStar: Double = {
+        val f_qPrime = f_Q_of_q.predict
+        f_Q_of_q.particles.map(q =>
+            f_qPrime.particles.map(qPrime =>
+                q * qPrime * difficulty(q, qPrime) / (NUM_PARTICLES * NUM_PARTICLES)))
+        .flatten.sum
+    }
 
     def submit_final() = {
         println("Final Utility: " + artifact_utility)
@@ -149,26 +163,22 @@ case class Question(trueAnswer: Boolean)
             improvement_job()
     }
 
-    def improvement_job(): QualityDistribution = f_Q_of_q.predict
-
+    // note this is a copy-paste of utility_of_stopping_voting, that IS what the paper says to do though.
+    // top-right of page 4
+    def utility_of_improvement_job: Double = {
+        max(
+            convolute_Utility_with_Particles(qstn.f_Q_of_q),
+            convolute_Utility_with_Particles(qstn.f_Q_of_q.predict)
+        ) - IMPROVEMENT_COST * UTILITY_OF_$$$
+    }
 
     /******* UNIMPLEMENTED **********/
     def estimate_prior_for_alphaPrime() = ???
 
     def update_posteriors_for_alphas() = ???
 
-    // note this is a copy-paste of utility_of_stopping_voting, that IS what the paper says to do though.
-    // top-right of page 4
-    def utility_of_improvement_job: Double = {
-        max(
-            qstn.f_Q_of_q.particles  // TODO extract this into a method. Note how it is also used for utility_of_stopping_voting
-              .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES)),
 
-            qstn.f_Q_of_q.predict.particles
-              .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES))
-
-        ) - IMPROVEMENT_COST * UTILITY_OF_$$$
-    }
+    def improvement_job(): QualityDistribution = { ??? }
 
     def utility_of_ballot_job: Double = ???
 
