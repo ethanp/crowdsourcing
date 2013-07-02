@@ -111,7 +111,6 @@ case class Workers(trueGX: Double)
         else
             1 - accuracy(qstn.artifact_difficulty)
     }
-
 }
 
 case class Question(trueAnswer: Boolean)
@@ -142,10 +141,9 @@ case class Question(trueAnswer: Boolean)
     // this is O(numParticles^2)...they also note that this equation takes a while
     def dStar: Double = {
         val f_qPrime = f_Q_of_q.predict
-        f_Q_of_q.particles.map(q =>
-            f_qPrime.particles.map(qPrime =>
-                q * qPrime * difficulty(q, qPrime) / (NUM_PARTICLES * NUM_PARTICLES)))
-        .flatten.sum
+        f_Q_of_q.particles.foldLeft(0.0)((sum, q) =>
+            sum + f_qPrime.particles.foldLeft(0.0)((sum2, qPrime) =>
+                sum2 + q * qPrime * difficulty(q, qPrime) / (NUM_PARTICLES * NUM_PARTICLES)))
     }
 
     def submit_final() = {
@@ -163,8 +161,9 @@ case class Question(trueAnswer: Boolean)
             improvement_job()
     }
 
-    // note this is a copy-paste of utility_of_stopping_voting, that IS what the paper says to do though.
-    // top-right of page 4
+    // note this is a copy-paste of utility_of_stopping_voting (besides the $$ part),
+    // that IS what the paper says to do though.
+    // [DTC] (top-right of page 4)
     def utility_of_improvement_job: Double = {
         max(
             convolute_Utility_with_Particles(qstn.f_Q_of_q),
@@ -176,7 +175,6 @@ case class Question(trueAnswer: Boolean)
     def estimate_prior_for_alphaPrime() = ???
 
     def update_posteriors_for_alphas() = ???
-
 
     def improvement_job(): QualityDistribution = { ??? }
 
