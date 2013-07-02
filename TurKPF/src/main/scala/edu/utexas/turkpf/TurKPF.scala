@@ -23,16 +23,15 @@ case class BallotJob(qstn: Question)
 {
     val ballotCost = .01
 
-    /* I don't think this is right because the "priorQualityDensityFctn"
-     * TODO doesn't incorporate the observation value of having obtained the ballots */
+    /* TODO doesn't incorporate the observation value of having obtained the ballots */
     def utility_of_stopping_voting: Double = {  // [DTC] (eq. 9)
         max(
-            qstn.priorQualityDensityFctn.priorDistr  // [DTC] (eq. 10)
-              .foldLeft(0.0)((sum,particle) => sum + (qstn.estimated_artifact_utility(particle)/NUM_PARTICLES)),
+            qstn.f_Q_of_q.particles  // [DTC] (eq. 10)
+              .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES)),
 
             // TODO this is a bit of a placeholder, the "PREDICT" /SHOULD/ have been done already by this point
-            qstn.priorQualityDensityFctn.predict.priorDistr  // [DTC] (eq. 11)
-              .foldLeft(0.0)((sum,particle) => sum + (qstn.estimated_artifact_utility(particle)/NUM_PARTICLES))
+            qstn.f_Q_of_q.predict.particles  // [DTC] (eq. 11)
+              .foldLeft(0.0)((sum,particle) => sum + (estimate_artifact_utility(particle)/NUM_PARTICLES))
         )
     }
 
@@ -53,21 +52,11 @@ case class BallotJob(qstn: Question)
     qstn.WORKERS.updateGX(votes)
 }
 
-abstract class ParticleFilter(numParticles: Int, dist: RealDistribution, priorDistribution: Array[Double])
-{
-    def predict: ParticleFilter
-    def observe
-    def re_estimate
-    def sample
-}
-
 /* prior quality estimate distribution f_Q (q) */
 case class QualityDistribution(numParticles: Int,
                                dist: RealDistribution,
-                               priorDistr: Array[Double],
+                               particles: Array[Double],
                                qstn: Question)
-
-    extends ParticleFilter(numParticles, dist, priorDistr)
 {
     def this(numParticles: Int, dist: RealDistribution, qstn: Question) =
         this(numParticles, dist, dist.sample(numParticles), qstn)
@@ -84,13 +73,20 @@ case class QualityDistribution(numParticles: Int,
 
     // [DTC] (eq. 1), q => generate f_{ Q' | particle.q } (q') and sample from it
     def predict: QualityDistribution =
-        QualityDistribution(numParticles, dist, priorDistr map {improvementDistr(_).sample}, qstn)
+        QualityDistribution(numParticles, dist, particles map {improvementDistr(_).sample}, qstn)
 
+    // [DTC] (eqs. 4-6)
     def observe { ??? }
 
     def re_estimate { ??? }
 
     def sample { ??? }
+
+    // avg loc of particles in associated Particle Filter
+    def meanQltyEst: Double = particles.sum / NUM_PARTICLES
+
+    // TODO don't actually run 'predict' here, just 'get' the prediction from somewhere
+    def meanQltyEstPrime: Double = predict.particles.sum / NUM_PARTICLES
 }
 
 /* I am modelling all workers with just one instance
@@ -113,15 +109,13 @@ case class Workers(trueGX: Double, qstn: Question)
         estGX += incorrect.length * (1 - qstn.difficulty) * learningRate
     }
 
-    def prob_true_given_qS(): Double = {
-        if (mean_f_Q_giv_q < mean_f_QP_giv_qp)
+    def prob_true_given_Qs: Double = {
+        if (qstn.f_Q_of_q.meanQltyEst < qstn.f_Q_of_q.meanQltyEstPrime)
             accuracy(qstn.difficulty)
         else
             1 - accuracy(qstn.difficulty)
     }
 
-    def mean_f_Q_giv_q(): Double = ???   // find avg loc of particles in associated Particle Filter
-    def mean_f_QP_giv_qp(): Double = ??? // find avg loc of particles in associated Particle Filter
 }
 
 case class Question(trueAnswer: Boolean)
@@ -132,24 +126,24 @@ case class Question(trueAnswer: Boolean)
     var workerTrueGm = WORKER_DIST.sample
     while (workerTrueGm < 0) workerTrueGm = WORKER_DIST.sample  // [DTC] trueGX > 0; code is dist-agnostic
     val WORKERS = Workers(workerTrueGm, QUESTION)
-    val priorQualityDensityFctn =
+    val f_Q_of_q =
         new QualityDistribution(NUM_PARTICLES, new BetaDistribution(1, 9), this) // [DTC] § Experimental Setup
 
 
     def difficulty = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)      // [DTC] (eq. 2)
 
-    def estimated_artifact_utility(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)    // [DTC] § Experimental Setup
+    def artifact_utility: Double = estimate_artifact_utility(qlty)  // TODO shouldn't this include the utility of $$$ ??
 
     def dStar = ???  // [DTC] (eq. 12)
 
     def submit_final() = {
-        println("Final Utility: " + estimated_artifact_utility(qlty))
+        println("Final Utility: " + artifact_utility)
         sys.exit(0)
     }
 
     def choose_action() {
-        if (estimated_artifact_utility(qlty) > utility_of_ballot_job
-         && estimated_artifact_utility(qlty) > utility_of_improvement_job)
+        if (artifact_utility > utility_of_ballot_job
+         && artifact_utility > utility_of_improvement_job)
             submit_final()
         else if (utility_of_ballot_job > utility_of_improvement_job)
             BallotJob
@@ -157,7 +151,7 @@ case class Question(trueAnswer: Boolean)
             improvement_job()
     }
 
-    def improvement_job(): QualityDistribution = priorQualityDensityFctn.predict
+    def improvement_job(): QualityDistribution = f_Q_of_q.predict
 
 
     /******* UNIMPLEMENTED **********/
@@ -181,6 +175,8 @@ object FirstExperiment
 
     /* this is a method so that it generates a new initial quality every time a question starts */
     def INITIAL_QUALITY = new BetaDistribution(1,9).sample
+
+    def estimate_artifact_utility(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)    // [DTC] § Experimental Setup
 
     val IMPROVEMENT_COST = .05
     val DIFFICULTY_CONSTANT = 0.5
