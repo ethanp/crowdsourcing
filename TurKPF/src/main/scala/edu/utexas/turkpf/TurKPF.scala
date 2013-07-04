@@ -15,14 +15,11 @@ import org.apache.commons.math3.distribution.{RealDistribution, BetaDistribution
  *  import SecondExperiment._  and so on  */
 import FirstExperiment._
 
-/* notes:
- *  All these convolutions make it convoluted
- */
+/* notes: */
 
 /* TODO I'm thinking this should NOT be its own class at all
-*  The artifact itself should be keeping track of the number of votes it has
-*  However, what difference does it really make?
-*/
+ *  The artifact itself should be keeping track of the number of votes it has
+ */
 case class BallotJob()
 {
     val ballotCost = .01
@@ -37,15 +34,45 @@ case class BallotJob()
     )}
 
     // [DTC] (eq. 5)
-    def dist_Q_after_vote = {
+    // TODO: Don't use f_Q_of_q, use f_Q_of_q_given_Bn
+    /* What this Does:
+     * Creates a posterior distribution (estimate) of the quality of the artifact
+     *  given one more ballot
+     * I don't think this same function can be easily used for both f_Q and f_Q'
+     *
+     * PSEUDOCODE:
+     * Create a new Particle Filter-based distribution from the old one
+     * For each particle in f_Q|bn,
+     *   multiply it against the convolution of f_Q'|bn with P(b|q,q')
+     * to obtain f_Q|(bn + 1)
+     */
+    def dist_Q_after_vote: QualityDistribution = {
         val predictedParticles = qstn.f_Q_of_q.predict.particles
-        qstn.f_Q_of_q.particles.foldLeft()
-        predictedParticles.foldLeft((sum2, particlePrime) =>    // [DTC] (eq. 6)
-            sum2 + particlePrime * qstn.wrkrs.GENERAL_prob_true_given_Qs(,particlePrime)
+        QualityDistribution(NUM_PARTICLES, new BetaDistribution(1,9),
+            qstn.f_Q_of_q.particles.map( particle =>
+                particle * predictedParticles.foldLeft(0.0)((sum, particlePrime) =>    // [DTC] (eq. 6)
+                    sum + particlePrime * qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
+                )
+            )
         )
     }
 
-    // [DTC] (bottom-left Pg. 4) this set of equations is the most intimidating set in this thing
+    /* [DTC] (eq. 7-8) basically the same as above, but the order in
+     *   which the distributions are used is switched
+     */
+    def dist_QPrime_after_vote: QualityDistribution = {
+        val predictedParticles = qstn.f_Q_of_q.predict.particles
+        QualityDistribution(NUM_PARTICLES, new BetaDistribution(1,9),
+            predictedParticles.map( particlePrime =>
+                particlePrime * qstn.f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>    // [DTC] (eq. 6)
+                    sum + particle * qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
+                )
+            )
+        )
+    }
+
+    // [DTC] (bottom-left Pg. 4)
+    // this set of equations is the most intimidating set in this thing
     /* PSEUDOCODE for calculating P(b_{n+1}):
      * For each particle in the "normal" set
      *  "Convolute" the [entire] "predicted" set of particles with the accuracy according to whether
@@ -56,9 +83,9 @@ case class BallotJob()
     def probability_of_yes_vote = {
         val predictedParticles = qstn.f_Q_of_q.predict.particles
         qstn.f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
-          sum + particle * predictedParticles.foldLeft(0.0)((sum2, primeParticle) =>
-            sum2 + qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, primeParticle) * primeParticle
-          )
+            sum + particle * predictedParticles.foldLeft(0.0)((sum2, primeParticle) =>
+                sum2 + qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, primeParticle) * primeParticle
+            )
         )
     }
 
@@ -105,12 +132,12 @@ case class QualityDistribution(numParticles: Int,
         this(numParticles, dist, dist.sample(numParticles))
 
     def find_improvementFunctionMean(qlty: Double): Double = { // [DTC] (eq. 13)
-        val accuracy: Double = qstn.wrkrs.accuracy(qstn.artifact_difficulty)
+    val accuracy: Double = qstn.wrkrs.accuracy(qstn.artifact_difficulty)
         qlty + 0.5 * ((1 - qlty) * (accuracy - 0.5) + qlty * (accuracy - 1))
     }
 
     def improvementDistr(qlty: Double) = {  // [DTC] § Experimental Setup
-        val mu = find_improvementFunctionMean(qlty)
+    val mu = find_improvementFunctionMean(qlty)
         new BetaDistribution(10 * mu, 10 * (1 - mu))
     }
 
@@ -161,7 +188,7 @@ case class Workers(trueGX: Double)
 
     // higher GX means Worse worker
     def updateGX(votes: List[Boolean]) {    // [DTC] (below eq. 12)
-        val (correct, incorrect) = votes.partition(_ == qstn.trueAnswer)
+    val (correct, incorrect) = votes.partition(_ == qstn.trueAnswer)
         estGX -= correct.length * qstn.artifact_difficulty * learningRate
         estGX += incorrect.length * (1 - qstn.artifact_difficulty) * learningRate
     }
@@ -230,7 +257,7 @@ case class Question(trueAnswer: Boolean)
 
     def choose_action() {
         if (artifact_utility > utility_of_ballot_job
-         && artifact_utility > utility_of_improvement_job)
+          && artifact_utility > utility_of_improvement_job)
             submit_final()
         else if (utility_of_ballot_job > utility_of_improvement_job)
             BallotJob
@@ -281,12 +308,12 @@ object FirstExperiment
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 400.0
     val NUM_PARTICLES       = 10000
-    val UTILITY_OF_$$$      = 5.0   // of course it's situation-dependent, but put a Good # here
 
-    /*
-     * I suppose one reason to make question a class, and not just bring it all
-     * into this Experiment class, is so that MANY Questions can be run Per Experiment
-     *  I'ma start with just one question though, and try and get that working first
+    // of course it's situation-dependent, but put a Good # here
+    val UTILITY_OF_$$$      = 5.0
+
+    /* so that MANY Questions can be run Per Experiment
+     * I'ma start with just one question though, and try to get that working first
      */
     val qstn = Question(trueAnswer=true)
 }
