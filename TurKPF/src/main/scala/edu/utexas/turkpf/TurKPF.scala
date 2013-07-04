@@ -16,9 +16,13 @@ import org.apache.commons.math3.distribution.{RealDistribution, BetaDistribution
 import FirstExperiment._
 
 /* notes:
- *  Type Info: cmd-T
+ *  All these convolutions make it convoluted
  */
 
+/* TODO I'm thinking this should NOT be its own class at all
+*  The artifact itself should be keeping track of the number of votes it has
+*  However, what difference does it really make?
+*/
 case class BallotJob()
 {
     val ballotCost = .01
@@ -28,17 +32,60 @@ case class BallotJob()
     def utility_of_stopping_voting: Double = {max(
         qstn.convolute_Utility_with_Particles(qstn.f_Q_of_q),  // [DTC] (eq. 10)
 
-        // TODO this is a bit of a placeholder, the "PREDICT" /SHOULD/ have been done already by this point
+        // TODO this a placeholder, "PREDICT" /SHOULD/ have been done by this point
         qstn.convolute_Utility_with_Particles(qstn.f_Q_of_q.predict)  // [DTC] (eq. 11)
     )}
 
-    def utility_of_voting: Double = ???
+    // [DTC] (eq. 5)
+    def dist_Q_after_vote = {
+        val predictedParticles = qstn.f_Q_of_q.predict.particles
+        qstn.f_Q_of_q.particles.foldLeft()
+        predictedParticles.foldLeft((sum2, particlePrime) =>    // [DTC] (eq. 6)
+            sum2 + particlePrime * qstn.wrkrs.GENERAL_prob_true_given_Qs(,particlePrime)
+        )
+    }
 
-    def need_another_vote: Boolean = utility_of_voting < utility_of_stopping_voting
+    // [DTC] (bottom-left Pg. 4) this set of equations is the most intimidating set in this thing
+    /* PSEUDOCODE for calculating P(b_{n+1}):
+     * For each particle in the "normal" set
+     *  "Convolute" the [entire] "predicted" set of particles with the accuracy according to whether
+     *  the particle in the predicted set has a higher value than the one in the normal set (eq. 3)
+     *   This convolution will yield a scalar
+     * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
+     */
+    def probability_of_yes_vote = {
+        val predictedParticles = qstn.f_Q_of_q.predict.particles
+        qstn.f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
+          sum + particle * predictedParticles.foldLeft(0.0)((sum2, primeParticle) =>
+            sum2 + qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, primeParticle) * primeParticle
+          )
+        )
+    }
+
+    /* PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
+     * First I need to use (eq. 5) [as-yet unimplemented] to generate f_{ Q | b_{n} + 1 } (q)
+     * For each particle in the result of performing (eq. 5)
+     *   For b_{n+1} \in {0,1}
+     *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
+     */
+    def expVal_OLD_artifact_with_addnl_vote = ???
+
+    // E[ U( Q' | b_{n} + 1 ) ] basically the same thing as above
+    def expVal_NEW_artifact_with_addnl_vote = ???
+
+    // [DTC] (bottom-left Pg. 4)
+    def utility_of_voting: Double = {
+        max(
+            expVal_OLD_artifact_with_addnl_vote,
+            expVal_NEW_artifact_with_addnl_vote
+        ) - BALLOT_COST * UTILITY_OF_$$$
+    }
+
+    def need_another_vote: Boolean = utility_of_stopping_voting < utility_of_voting
 
     def get_addnl_ballot(): Boolean = {
         qstn.balance -= ballotCost  // pay for it
-        qstn.WORKERS.generateVote(qstn.artifact_difficulty)
+        qstn.wrkrs.generateVote(qstn.artifact_difficulty)
     }
 
     var votes = List[Boolean]()
@@ -46,7 +93,7 @@ case class BallotJob()
     while (need_another_vote) {
         votes ::= get_addnl_ballot()
     }
-    qstn.WORKERS.updateGX(votes)
+    qstn.wrkrs.updateGX(votes)
 }
 
 /* prior quality estimate distribution f_Q (q) */
@@ -58,7 +105,7 @@ case class QualityDistribution(numParticles: Int,
         this(numParticles, dist, dist.sample(numParticles))
 
     def find_improvementFunctionMean(qlty: Double): Double = { // [DTC] (eq. 13)
-        val accuracy: Double = qstn.WORKERS.accuracy(qstn.artifact_difficulty)
+        val accuracy: Double = qstn.wrkrs.accuracy(qstn.artifact_difficulty)
         qlty + 0.5 * ((1 - qlty) * (accuracy - 0.5) + qlty * (accuracy - 1))
     }
 
@@ -68,6 +115,17 @@ case class QualityDistribution(numParticles: Int,
     }
 
     // [DTC] (eq. 1), q => generate f_{ Q' | particle.q } (q') and sample from it
+    /* This function is the kernel of this whole thing.
+     * THE WAY THIS WORKS: (I already forgot, so I need to document it for myself)
+     * We go through each particle, and using its value (which is an estimate of the qlty),
+     * we generate an "improvement distribution" which is f_{ Q' | particle.q } (q').
+     * This distribution describes how much we can expect [an avg.] worker to improve the
+     * quality of the artifact. And since (eq. 1) is integrating over (q) and not (q'),
+     * we don't need to use the entire "improvement distribution", instead we want to take a
+     * "random" stab at where quality will be after the "improvement job". _That_ is why it
+     * is legit to _sample_ from the "improvement distribution" instead of doing anything
+     * snazzier with it.
+     */
     def predict: QualityDistribution =
         QualityDistribution(numParticles, dist, particles map {improvementDistr(_).sample})
 
@@ -108,11 +166,18 @@ case class Workers(trueGX: Double)
         estGX += incorrect.length * (1 - qstn.artifact_difficulty) * learningRate
     }
 
-    def prob_true_given_Qs: Double = {
-        if (qstn.f_Q_of_q.meanQltyEst < qstn.f_Q_of_q.meanQltyEstPrime)
-            accuracy(qstn.artifact_difficulty)
+    def THE_prob_true_given_Qs: Double = {
+        GENERAL_prob_true_given_Qs(
+            qstn.f_Q_of_q.meanQltyEst,
+            qstn.f_Q_of_q.meanQltyEstPrime
+        )
+    }
+
+    def GENERAL_prob_true_given_Qs(q: Double, qP: Double): Double = {
+        if (q < qP)
+            accuracy(qstn.difficulty(q, qP))
         else
-            1 - accuracy(qstn.artifact_difficulty)
+            1 - accuracy(qstn.difficulty(q, qP))
     }
 }
 
@@ -126,7 +191,7 @@ case class Question(trueAnswer: Boolean)
     var workerTrueGm = WORKER_DIST.sample
     while (workerTrueGm < 0) workerTrueGm = WORKER_DIST.sample
 
-    val WORKERS = Workers(workerTrueGm)
+    val wrkrs = Workers(workerTrueGm)
 
     // [DTC] § Experimental Setup
     val f_Q_of_q =
@@ -210,6 +275,7 @@ object FirstExperiment
     def estimate_artifact_utility(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)
 
     val IMPROVEMENT_COST    = .05
+    val BALLOT_COST         = .01
     val DIFFICULTY_CONSTANT = 0.5
     val LOOKAHEAD_DEPTH     = 3
     val NUM_QUESTIONS       = 10000
