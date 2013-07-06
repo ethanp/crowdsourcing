@@ -17,112 +17,6 @@ import FirstExperiment._
 
 /* notes: */
 
-/* TODO I'm thinking this should NOT be its own class at all
- *  The artifact itself should be keeping track of the number of votes it has
- */
-case class BallotJob()
-{
-    /* TODO doesn't incorporate the observation value of having obtained the ballots */
-    // [DTC] (eq. 9)
-    // TODO this eq. is also used to decide which of the artifacts to keep [DTC top-right pg. 4]
-    def utility_of_stopping_voting: Double = { max(
-        qstn.convolute_Utility_with_Particles(qstn.f_Q_of_q),  // [DTC] (eq. 10)
-
-        // TODO this a placeholder, "PREDICT" /SHOULD/ have been done by this point
-        qstn.convolute_Utility_with_Particles(qstn.f_Q_of_q.predict)  // [DTC] (eq. 11)
-    )}
-
-    // [DTC] (eq. 5)
-    // TODO: Don't use f_Q_of_q, use f_Q_of_q_given_Bn
-    /* What this Does:
-     * Creates a posterior distribution (estimate) of the quality of the artifact
-     *  given one more ballot
-     * I now think this same function can be easily used for both f_Q and f_Q'
-     *  (just pass in the two particle-sets as parameters, and switch the order)
-     *
-     * PSEUDOCODE:
-     * Create a new Particle Filter-based distribution from the old one
-     * For each particle in f_Q|bn,
-     *   multiply it against the convolution of f_Q'|bn with P(b|q,q')
-     * to obtain f_Q|(bn + 1)
-     */
-    def dist_Q_after_vote: QualityDistribution = {
-        val predictedParticles = qstn.f_Q_of_q.predict.particles
-        QualityDistribution(NUM_PARTICLES,
-            qstn.f_Q_of_q.particles.map { particle =>
-                particle * predictedParticles.foldLeft(0.0)((sum, particlePrime) => // [DTC] (eq. 6)
-                    sum + particlePrime *
-                      qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime) / NUM_PARTICLES
-                ) / NUM_PARTICLES
-            }
-        )
-    }
-
-    /* [DTC] (eq. 7-8) basically the same as above, but the order in
-     *   which the distributions are used is switched
-     */
-    def dist_QPrime_after_vote: QualityDistribution = {
-        val predictedParticles = qstn.f_Q_of_q.predict.particles
-        QualityDistribution(NUM_PARTICLES,
-            predictedParticles.map {particlePrime =>
-                particlePrime * qstn.f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
-                    sum + particle
-                      * qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime) / NUM_PARTICLES
-                ) / NUM_PARTICLES
-            }
-        )
-    }
-
-    // [DTC] (bottom-left Pg. 4)
-    // this set of equations is the most intimidating set in this thing
-    /* PSEUDOCODE for calculating P(b_{n+1}):
-     * For each particle in the "normal" set
-     *  "Convolute" the [entire] "predicted" set of particles with the accuracy according to whether
-     *  the particle in the predicted set has a higher value than the one in the normal set (eq. 3)
-     *   This convolution will yield a scalar
-     * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
-     */
-    def probability_of_yes_vote = {
-        val predictedParticles = qstn.f_Q_of_q.predict.particles
-        qstn.f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
-            sum + particle * predictedParticles.foldLeft(0.0)((sum2, primeParticle) =>
-                sum2 + qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, primeParticle)
-                  * primeParticle / NUM_PARTICLES
-            ) / NUM_PARTICLES
-        )
-    }
-
-    /* PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
-     * First, I need to use (eq. 5) (as-yet unimplemented) to generate f_{ Q | b_{n} + 1 } (q)
-     * Then, For each particle in the result of performing (eq. 5)
-     *   For each vote outcome \in { 0, 1 }
-     *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
-     */
-    def expVal_OLD_artifact_with_addnl_vote = ???
-
-    // E[ U( Q' | b_{n} + 1 ) ] basically the same thing as above
-    def expVal_NEW_artifact_with_addnl_vote = ???
-
-    // [DTC] (bottom-left Pg. 4)
-    def utility_of_voting: Double = {
-        max(
-            expVal_OLD_artifact_with_addnl_vote,
-            expVal_NEW_artifact_with_addnl_vote
-        ) - BALLOT_COST * UTILITY_OF_$$$
-    }
-
-    def get_addnl_ballot(): Boolean = {
-        qstn.balance -= BALLOT_COST  // pay for it
-        val vote: Boolean = qstn.wrkrs.generateVote(qstn.artifact_difficulty)
-        votes ::= vote
-        vote
-    }
-
-    var votes = List[Boolean]()
-
-    qstn.wrkrs.updateGX(votes)
-}
-
 /* prior quality estimate distribution f_Q (q) */
 case class QualityDistribution(numParticles: Int,
                                particles: Array[Double])
@@ -284,6 +178,109 @@ case class Question(trueAnswer: Boolean)
         ) - IMPROVEMENT_COST * UTILITY_OF_$$$
     }
 
+    /******* Was class BallotJob, moved it in here bc that's not a separate entity *****/
+
+    /* TODO doesn't incorporate the observation value of having obtained the ballots */
+    // [DTC] (eq. 9)
+    // TODO this eq. is also used to decide which of the artifacts to keep [DTC top-right pg. 4]
+    def utility_of_stopping_voting: Double = { max(
+        convolute_Utility_with_Particles(f_Q_of_q),  // [DTC] (eq. 10)
+
+        // TODO this a placeholder, "PREDICT" /SHOULD/ have been done by this point
+        convolute_Utility_with_Particles(f_Q_of_q.predict)  // [DTC] (eq. 11)
+    )}
+
+    // [DTC] (eq. 5)
+    // TODO: Don't use f_Q_of_q, use f_Q_of_q_given_Bn
+    /* What this Does:
+     * Creates a posterior distribution (estimate) of the quality of the artifact
+     *  given one more ballot
+     * I now think this same function can be easily used for both f_Q and f_Q'
+     *  (just pass in the two particle-sets as parameters, and switch the order)
+     *
+     * PSEUDOCODE:
+     * Create a new Particle Filter-based distribution from the old one
+     * For each particle in f_Q|bn,
+     *   multiply it against the convolution of f_Q'|bn with P(b|q,q')
+     * to obtain f_Q|(bn + 1)
+     */
+    def dist_Q_after_vote: QualityDistribution = {
+        val predictedParticles = f_Q_of_q.predict.particles
+        QualityDistribution(NUM_PARTICLES,
+            f_Q_of_q.particles.map { particle =>
+                particle * predictedParticles.foldLeft(0.0)((sum, particlePrime) => // [DTC] (eq. 6)
+                    sum + particlePrime *
+                      wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime) / NUM_PARTICLES
+                ) / NUM_PARTICLES
+            }
+        )
+    }
+
+    /* [DTC] (eq. 7-8) basically the same as above, but the order in
+     *   which the distributions are used is switched
+     */
+    def dist_QPrime_after_vote: QualityDistribution = {
+        val predictedParticles = f_Q_of_q.predict.particles
+        QualityDistribution(NUM_PARTICLES,
+            predictedParticles.map {particlePrime =>
+                particlePrime * f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
+                    sum + particle
+                      * wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime) / NUM_PARTICLES
+                ) / NUM_PARTICLES
+            }
+        )
+    }
+
+    // [DTC] (bottom-left Pg. 4)
+    // this set of equations is the most intimidating set in this thing
+    /* PSEUDOCODE for calculating P(b_{n+1}):
+     * For each particle in the "normal" set
+     *  "Convolute" the [entire] "predicted" set of particles with the accuracy according to whether
+     *  the particle in the predicted set has a higher value than the one in the normal set (eq. 3)
+     *   This convolution will yield a scalar
+     * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
+     */
+    def probability_of_yes_vote = {
+        val predictedParticles = f_Q_of_q.predict.particles
+        f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
+            sum + particle * predictedParticles.foldLeft(0.0)((sum2, primeParticle) =>
+                sum2 + wrkrs.GENERAL_prob_true_given_Qs(particle, primeParticle)
+                  * primeParticle / NUM_PARTICLES
+            ) / NUM_PARTICLES
+        )
+    }
+
+    /* PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
+     * First, I need to use (eq. 5) (as-yet unimplemented) to generate f_{ Q | b_{n} + 1 } (q)
+     * Then, For each particle in the result of performing (eq. 5)
+     *   For each vote outcome \in { 0, 1 }
+     *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
+     */
+    def expVal_OLD_artifact_with_addnl_vote = ???
+
+    // E[ U( Q' | b_{n} + 1 ) ] basically the same thing as above
+    def expVal_NEW_artifact_with_addnl_vote = ???
+
+    // [DTC] (bottom-left Pg. 4)
+    def utility_of_voting: Double = {
+        max(
+            expVal_OLD_artifact_with_addnl_vote,
+            expVal_NEW_artifact_with_addnl_vote
+        ) - BALLOT_COST * UTILITY_OF_$$$
+    }
+
+    def get_addnl_ballot(): Boolean = {
+        balance -= BALLOT_COST  // pay for it
+        val vote: Boolean = wrkrs.generateVote(artifact_difficulty)
+        votes ::= vote
+        vote
+    }
+
+    var votes = List[Boolean]()
+
+    def re_estimate_worker_accuracy(workerIndex: Int) { wrkrs.updateGX(votes) }
+
+
     /******* UNIMPLEMENTED **********/
     def estimate_prior_for_alphaPrime() = ???
 
@@ -293,8 +290,6 @@ case class Question(trueAnswer: Boolean)
      * which should /not/ be contained within its own class
      */
     def improvement_job(): QualityDistribution = { ??? }
-
-    def re_estimate_worker_accuracy(workerIndex: Int) { ??? }
 
     def update_belief_state() { ??? }
 }
