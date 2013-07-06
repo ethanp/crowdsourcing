@@ -15,6 +15,8 @@ import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistributi
  *  import SecondExperiment._  and so on  */
 import FirstExperiment._
 
+/* TODO: abstract out all the convolutions so they become more legible */
+
 /* Particle Filter representation of
  * artifact quality probability density functions
  *      f_{Q}(q)
@@ -29,11 +31,11 @@ case class QualityDistribution(numParticles: Int,
 
     def this(particles: Array[Double]) = this(NUM_PARTICLES, particles)
 
-    def this() = this(NUM_PARTICLES)
+    def this() = this(NUM_PARTICLES, new BetaDistribution(1,9).sample(numParticles))
 
     // [DTC] (eq. 13)
     def find_improvementFunctionMean(qlty: Double): Double = {
-    val accuracy: Double = qstn.wrkrs.accuracy(qstn.artifact_difficulty)
+        val accuracy: Double = qstn.wrkrs.accuracy(qstn.artifact_difficulty)
         qlty + 0.5 * ((1 - qlty) * (accuracy - 0.5) + qlty * (accuracy - 1))
     }
 
@@ -44,25 +46,31 @@ case class QualityDistribution(numParticles: Int,
     }
 
     // [DTC] (eq. 1), q => generate f_{ Q' | particle.q } (q') and sample from it
-    /* This function is the kernel of this whole thing.
+    /* This function is possibly the most important of this whole thing.
+     *
      * THE WAY THIS WORKS:
      * We go through each particle, and using its value (which is an estimate of the qlty),
      * we generate an "improvement distribution" which is f_{ Q' | particle.q } (q').
      * This distribution describes how much we can expect [an avg.] worker to improve the
      * quality of the artifact. And since (eq. 1) is integrating over (q) and not (q'),
      * we don't need to use the entire "improvement distribution", instead we want to take a
-     * "random" stab at where quality will be after the "improvement job". _That_ is why it
-     * is legit to _sample_ from the "improvement distribution" instead of doing anything
-     * snazzier with it.
+     * "random" stab at where quality will be after the "improvement job". So we can sample
+     * from the "improvement distribution" instead of doing anything snazzier with it.
      */
     def predict: QualityDistribution =
-        QualityDistribution(numParticles, particles map {improvementDistr(_).sample})
+        new QualityDistribution(particles map {improvementDistr(_).sample})
 
-    // [DTC] (eqs. 4-6)
-    def observe(vote: Boolean): QualityDistribution = { ??? }
+    // [DTC] (eqs. 4,5,6,7,8)
+    def observe(vote: Boolean) {
+        qstn.f_Q_of_q      = qstn.dist_Q_after_vote(vote)
+        qstn.f_Q_of_qPrime = qstn.dist_QPrime_after_vote(vote)
+        qstn.votes ::= vote
+    }
 
+    // TODO
     def re_estimate { ??? }
 
+    // TODO
     def sample { ??? }
 
     // avg loc of particles in associated Particle Filter
@@ -208,13 +216,15 @@ case class Question(trueAnswer: Boolean)
      *   multiply it against the convolution of f_Q'|bn with P(b|q,q')
      * to obtain f_Q|(bn + 1)
      */
-    def dist_Q_after_vote: QualityDistribution = {
+    def dist_Q_after_vote(vote: Boolean): QualityDistribution = {
         val predictedParticles = f_Q_of_qPrime.particles
         QualityDistribution(NUM_PARTICLES,
             f_Q_of_q.particles.map { particle =>
                 particle * predictedParticles.foldLeft(0.0)((sum, particlePrime) => // [DTC] (eq. 6)
-                    sum + particlePrime *
-                      wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime) / NUM_PARTICLES
+                    {
+                        val probTrue: Double = wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
+                        sum + particlePrime * invertIfFalse(vote, probTrue) / NUM_PARTICLES
+                    }
                 ) / NUM_PARTICLES
             }
         )
@@ -223,16 +233,20 @@ case class Question(trueAnswer: Boolean)
     /* [DTC] (eq. 7-8) basically the same as above, but the order in
      *   which the distributions are used is switched
      */
-    def dist_QPrime_after_vote: QualityDistribution = {
+    def dist_QPrime_after_vote(vote: Boolean): QualityDistribution = {
         QualityDistribution(NUM_PARTICLES,
             f_Q_of_qPrime.particles.map {particlePrime =>
                 particlePrime * f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
-                    sum + particle
-                      * wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime) / NUM_PARTICLES
+                    {
+                        val probTrue: Double = wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
+                        sum + particle * invertIfFalse(vote, probTrue) / NUM_PARTICLES
+                    }
                 ) / NUM_PARTICLES
             }
         )
     }
+
+    def invertIfFalse(vote: Boolean, value: Double): Double = if (vote) value else 1-value
 
     // [DTC] (bottom-left Pg. 4)
     // this set of equations is the most intimidating set in this thing
@@ -258,9 +272,11 @@ case class Question(trueAnswer: Boolean)
      *   For each vote outcome \in { 0, 1 }
      *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
      */
+    // TODO
     def expVal_OLD_artifact_with_addnl_vote = ???
 
     // E[ U( Q' | b_{n} + 1 ) ] basically the same thing as above
+    // TODO
     def expVal_NEW_artifact_with_addnl_vote = ???
 
     // [DTC] (bottom-left Pg. 4)
@@ -302,11 +318,8 @@ case class Question(trueAnswer: Boolean)
     }
 
     /******* UNIMPLEMENTED **********/
-    def estimate_prior_for_alphaPrime() = ???  // TODO
-
-    def update_posteriors_for_alphas() = ???  // TODO
-
-    def update_belief_state() { ??? }  // TODO
+    // TODO
+    def update_posteriors_for_alphas() = ???
 }
 
 object FirstExperiment
