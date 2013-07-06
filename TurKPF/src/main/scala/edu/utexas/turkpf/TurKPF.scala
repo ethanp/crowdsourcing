@@ -64,7 +64,6 @@ case class QualityDistribution(numParticles: Int,
     def observe(vote: Boolean) {
         qstn.f_Q_of_q      = qstn.dist_Q_after_vote(vote)
         qstn.f_Q_of_qPrime = qstn.dist_QPrime_after_vote(vote)
-        qstn.votes ::= vote
     }
 
     // TODO
@@ -77,11 +76,7 @@ case class QualityDistribution(numParticles: Int,
     def meanQltyEst: Double = particles.sum / NUM_PARTICLES
 }
 
-/* I am modelling all workers with just one instance
- *  instead of having one worker-independent model
- *  and multiple worker-dependent models
- * in order to simply my life a bit
- */
+/* I am modelling all workers with just one worker-independent model */
 case class Workers(trueGX: Double)
 {
     val learningRate = 0.05
@@ -93,11 +88,17 @@ case class Workers(trueGX: Double)
     // [DTC] (above eq. 3)
     def accuracy(difficulty: Double) = 0.5 * (1 + pow(1-difficulty, estGX))
 
+    /* I'm not sure about my whole "bigger/smaller" logic it was a guess...
+     *  plus there HAS to be a less unsightly way of accomplishing the same thing */
     // higher GX means Worse worker
     def updateGX(votes: List[Boolean]) {    // [DTC] (below eq. 12)
-    val (correct, incorrect) = votes.partition(_ == qstn.trueAnswer)
-        estGX -= correct.length * qstn.artifact_difficulty * learningRate
-        estGX += incorrect.length * (1 - qstn.artifact_difficulty) * learningRate
+        val (trues, falses) = votes.partition(_ == true)
+        val trueBigger = trues.length > falses.length
+        val bigger = if (trueBigger) trues.length else falses.length
+        val smaller = if (trueBigger) falses.length else trues.length
+        val d = qstn.artifact_difficulty
+        estGX -= bigger * d * learningRate
+        estGX += smaller * (1 - d) * learningRate
     }
 
     def THE_prob_true_given_Qs: Double = {
@@ -108,10 +109,10 @@ case class Workers(trueGX: Double)
     }
 
     def GENERAL_prob_true_given_Qs(q: Double, qP: Double): Double = {
-        if (q < qP)
+        qstn.invertIfFalse(
+            q < qP,
             accuracy(qstn.difficulty(q, qP))
-        else
-            1 - accuracy(qstn.difficulty(q, qP))
+        )
     }
 }
 
@@ -147,6 +148,7 @@ case class Question(trueAnswer: Boolean)
      */
     def artifact_utility: Double = estimate_artifact_utility(qlty) + balance * UTILITY_OF_$$$
 
+    // CONVOLUTION
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
         dist.particles.foldLeft(0.0)(
             (sum, particle) =>
@@ -156,6 +158,7 @@ case class Question(trueAnswer: Boolean)
 
     // [DTC] (eq. 12)
     // this is O(numParticles^2)...they also note that this equation takes a while
+    // CONVOLUTION
     def dStar: Double = {
         f_Q_of_q.particles.foldLeft(0.0)((sum, q) =>
             sum + f_Q_of_qPrime.particles.foldLeft(0.0)((sum2, qPrime) =>
@@ -181,14 +184,11 @@ case class Question(trueAnswer: Boolean)
             improvement_job()
     }
 
-    // note this is a copy-paste of utility_of_stopping_voting (besides the $$ part),
-    // that IS what the paper says to do though.
+    // I had written that this is what the paper says to do,
+    //  but it seems hard to believe, so I oughtta check again
     // [DTC] (top-right of page 4)
     def utility_of_improvement_job: Double = {
-        max(
-            convolute_Utility_with_Particles(qstn.f_Q_of_q),
-            convolute_Utility_with_Particles(qstn.f_Q_of_qPrime)
-        ) - IMPROVEMENT_COST * UTILITY_OF_$$$
+        utility_of_stopping_voting - IMPROVEMENT_COST * UTILITY_OF_$$$
     }
 
     /******* Was class BallotJob, moved it in here bc that's not a separate entity *****/
@@ -198,7 +198,6 @@ case class Question(trueAnswer: Boolean)
     // TODO this eq. is also used to decide which of the artifacts to keep [DTC top-right pg. 4]
     def utility_of_stopping_voting: Double = { max(
         convolute_Utility_with_Particles(f_Q_of_q),  // [DTC] (eq. 10)
-
         convolute_Utility_with_Particles(f_Q_of_qPrime)  // [DTC] (eq. 11)
     )}
 
@@ -216,6 +215,7 @@ case class Question(trueAnswer: Boolean)
      *   multiply it against the convolution of f_Q'|bn with P(b|q,q')
      * to obtain f_Q|(bn + 1)
      */
+    // CONVOLUTION
     def dist_Q_after_vote(vote: Boolean): QualityDistribution = {
         val predictedParticles = f_Q_of_qPrime.particles
         QualityDistribution(NUM_PARTICLES,
@@ -233,6 +233,7 @@ case class Question(trueAnswer: Boolean)
     /* [DTC] (eq. 7-8) basically the same as above, but the order in
      *   which the distributions are used is switched
      */
+    // CONVOLUTION
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution = {
         QualityDistribution(NUM_PARTICLES,
             f_Q_of_qPrime.particles.map {particlePrime =>
@@ -246,7 +247,7 @@ case class Question(trueAnswer: Boolean)
         )
     }
 
-    def invertIfFalse(vote: Boolean, value: Double): Double = if (vote) value else 1-value
+    def invertIfFalse(truth: Boolean, value: Double): Double = if (truth) value else 1-value
 
     // [DTC] (bottom-left Pg. 4)
     // this set of equations is the most intimidating set in this thing
@@ -257,6 +258,7 @@ case class Question(trueAnswer: Boolean)
      *   This convolution will yield a scalar
      * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
      */
+    // CONVOLUTION
     def probability_of_yes_vote = {
         f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
             sum + particle * f_Q_of_qPrime.particles.foldLeft(0.0)((sum2, primeParticle) =>
@@ -272,11 +274,11 @@ case class Question(trueAnswer: Boolean)
      *   For each vote outcome \in { 0, 1 }
      *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
      */
-    // TODO
+    // TODO use dist_Q_after_vote ?
     def expVal_OLD_artifact_with_addnl_vote = ???
 
     // E[ U( Q' | b_{n} + 1 ) ] basically the same thing as above
-    // TODO
+    // TODO use dist_QPrime_after_vote ?
     def expVal_NEW_artifact_with_addnl_vote = ???
 
     // [DTC] (bottom-left Pg. 4)
@@ -290,36 +292,30 @@ case class Question(trueAnswer: Boolean)
     def get_addnl_ballot(): Boolean = {
         balance -= BALLOT_COST  // pay for it
         val vote: Boolean = wrkrs.generateVote(artifact_difficulty)
+        f_Q_of_q.observe(vote)  // this is ugly...
         votes ::= vote
         vote
     }
 
     var votes = List[Boolean]()
 
-    def re_estimate_worker_accuracy() { wrkrs.updateGX(votes) }
-
     def improvement_job() {
         // pay for it
         balance -= IMPROVEMENT_COST
 
         // choose to continue with \alpha or \alphaPrime
-        if (dist_Q_after_vote.meanQltyEst <
-          dist_QPrime_after_vote.meanQltyEst)
+        if (f_Q_of_q.meanQltyEst < f_Q_of_qPrime.meanQltyEst)
             f_Q_of_q = f_Q_of_qPrime
 
         // use majority vote to update GX
-        re_estimate_worker_accuracy()
+        wrkrs.updateGX(votes)
 
         // clear votes out
         votes = List[Boolean]()
 
-        // create prediction for quality of improved artifact
+        // create new prior for quality of improved artifact
         f_Q_of_qPrime = f_Q_of_q.predict
     }
-
-    /******* UNIMPLEMENTED **********/
-    // TODO
-    def update_posteriors_for_alphas() = ???
 }
 
 object FirstExperiment
