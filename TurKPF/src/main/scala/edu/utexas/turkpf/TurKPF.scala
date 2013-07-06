@@ -11,27 +11,35 @@
 import math._
 import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
 
-/* this means I can choose all new parameters by replacing this line with
+/* this means one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
 import FirstExperiment._
 
-/* notes: */
-
-/* prior quality estimate distribution f_Q (q) */
+/* Particle Filter representation of
+ * artifact quality probability density functions
+ *      f_{Q}(q)
+ *      f_{Q'}(q')
+ *      f_{Q|bn}(q)
+ *      f_{Q'|bn}(q)
+ */
 case class QualityDistribution(numParticles: Int,
                                particles: Array[Double])
 {
     def this(numParticles: Int) = this(numParticles, new BetaDistribution(1,9).sample(numParticles))
+
     def this(particles: Array[Double]) = this(NUM_PARTICLES, particles)
+
     def this() = this(NUM_PARTICLES)
 
-    def find_improvementFunctionMean(qlty: Double): Double = { // [DTC] (eq. 13)
+    // [DTC] (eq. 13)
+    def find_improvementFunctionMean(qlty: Double): Double = {
     val accuracy: Double = qstn.wrkrs.accuracy(qstn.artifact_difficulty)
         qlty + 0.5 * ((1 - qlty) * (accuracy - 0.5) + qlty * (accuracy - 1))
     }
 
-    def improvementDistr(qlty: Double) = {  // [DTC] § Experimental Setup
-    val mu = find_improvementFunctionMean(qlty)
+    // [DTC] § Experimental Setup
+    def improvementDistr(qlty: Double) = {
+        val mu = find_improvementFunctionMean(qlty)
         new BetaDistribution(10 * mu, 10 * (1 - mu))
     }
 
@@ -59,9 +67,6 @@ case class QualityDistribution(numParticles: Int,
 
     // avg loc of particles in associated Particle Filter
     def meanQltyEst: Double = particles.sum / NUM_PARTICLES
-
-    // TODO don't actually run 'predict' here, just 'get' the prediction from somewhere
-    def meanQltyEstPrime: Double = predict.particles.sum / NUM_PARTICLES
 }
 
 /* I am modelling all workers with just one instance
@@ -90,7 +95,7 @@ case class Workers(trueGX: Double)
     def THE_prob_true_given_Qs: Double = {
         GENERAL_prob_true_given_Qs(
             qstn.f_Q_of_q.meanQltyEst,
-            qstn.f_Q_of_q.meanQltyEstPrime
+            qstn.f_Q_of_qPrime.meanQltyEst
         )
     }
 
@@ -144,9 +149,8 @@ case class Question(trueAnswer: Boolean)
     // [DTC] (eq. 12)
     // this is O(numParticles^2)...they also note that this equation takes a while
     def dStar: Double = {
-        val f_qPrime = f_Q_of_q.predict
         f_Q_of_q.particles.foldLeft(0.0)((sum, q) =>
-            sum + f_qPrime.particles.foldLeft(0.0)((sum2, qPrime) =>
+            sum + f_Q_of_qPrime.particles.foldLeft(0.0)((sum2, qPrime) =>
                 sum2 + q * qPrime * difficulty(q, qPrime) / NUM_PARTICLES
             ) / NUM_PARTICLES
         )
@@ -175,7 +179,7 @@ case class Question(trueAnswer: Boolean)
     def utility_of_improvement_job: Double = {
         max(
             convolute_Utility_with_Particles(qstn.f_Q_of_q),
-            convolute_Utility_with_Particles(qstn.f_Q_of_q.predict)
+            convolute_Utility_with_Particles(qstn.f_Q_of_qPrime)
         ) - IMPROVEMENT_COST * UTILITY_OF_$$$
     }
 
@@ -187,8 +191,7 @@ case class Question(trueAnswer: Boolean)
     def utility_of_stopping_voting: Double = { max(
         convolute_Utility_with_Particles(f_Q_of_q),  // [DTC] (eq. 10)
 
-        // TODO this a placeholder, "PREDICT" /SHOULD/ have been done by this point
-        convolute_Utility_with_Particles(f_Q_of_q.predict)  // [DTC] (eq. 11)
+        convolute_Utility_with_Particles(f_Q_of_qPrime)  // [DTC] (eq. 11)
     )}
 
     // [DTC] (eq. 5)
@@ -206,7 +209,7 @@ case class Question(trueAnswer: Boolean)
      * to obtain f_Q|(bn + 1)
      */
     def dist_Q_after_vote: QualityDistribution = {
-        val predictedParticles = f_Q_of_q.predict.particles
+        val predictedParticles = f_Q_of_qPrime.particles
         QualityDistribution(NUM_PARTICLES,
             f_Q_of_q.particles.map { particle =>
                 particle * predictedParticles.foldLeft(0.0)((sum, particlePrime) => // [DTC] (eq. 6)
@@ -221,9 +224,8 @@ case class Question(trueAnswer: Boolean)
      *   which the distributions are used is switched
      */
     def dist_QPrime_after_vote: QualityDistribution = {
-        val predictedParticles = f_Q_of_q.predict.particles
         QualityDistribution(NUM_PARTICLES,
-            predictedParticles.map {particlePrime =>
+            f_Q_of_qPrime.particles.map {particlePrime =>
                 particlePrime * f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
                     sum + particle
                       * wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime) / NUM_PARTICLES
@@ -242,9 +244,8 @@ case class Question(trueAnswer: Boolean)
      * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
      */
     def probability_of_yes_vote = {
-        val predictedParticles = f_Q_of_q.predict.particles
         f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
-            sum + particle * predictedParticles.foldLeft(0.0)((sum2, primeParticle) =>
+            sum + particle * f_Q_of_qPrime.particles.foldLeft(0.0)((sum2, primeParticle) =>
                 sum2 + wrkrs.GENERAL_prob_true_given_Qs(particle, primeParticle)
                   * primeParticle / NUM_PARTICLES
             ) / NUM_PARTICLES
@@ -295,6 +296,9 @@ case class Question(trueAnswer: Boolean)
 
         // clear votes out
         votes = List[Boolean]()
+
+        // create prediction for quality of improved artifact
+        f_Q_of_qPrime = f_Q_of_q.predict
     }
 
     /******* UNIMPLEMENTED **********/
