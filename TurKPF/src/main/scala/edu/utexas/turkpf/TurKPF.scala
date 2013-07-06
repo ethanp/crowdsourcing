@@ -115,7 +115,9 @@ case class Question(trueAnswer: Boolean)
     val wrkrs = Workers(workerTrueGm)
 
     // [DTC] § Experimental Setup
-    val f_Q_of_q = new QualityDistribution  // defaults to BetaDist(1,9)
+    var f_Q_of_q = new QualityDistribution  // defaults to BetaDist(1,9)
+
+    var f_Q_of_qPrime = new QualityDistribution
 
 
     def artifact_difficulty: Double = difficulty(qlty, qltyPrime)
@@ -155,15 +157,14 @@ case class Question(trueAnswer: Boolean)
         sys.exit(0)
     }
 
-    // TODO this seems like a sloppy way to hold on to this
-    var current_ballot_job = new BallotJob
-
     def choose_action() {
-        if (artifact_utility > current_ballot_job.utility_of_voting
+        if (artifact_utility > utility_of_voting
           && artifact_utility > utility_of_improvement_job)
             submit_final()
-        else if (current_ballot_job.utility_of_voting > utility_of_improvement_job)
-            current_ballot_job = new BallotJob
+
+        else if (utility_of_voting > utility_of_improvement_job)
+            get_addnl_ballot()
+
         else
             improvement_job()
     }
@@ -278,20 +279,30 @@ case class Question(trueAnswer: Boolean)
 
     var votes = List[Boolean]()
 
-    def re_estimate_worker_accuracy(workerIndex: Int) { wrkrs.updateGX(votes) }
+    def re_estimate_worker_accuracy() { wrkrs.updateGX(votes) }
 
+    def improvement_job() {
+        // pay for it
+        balance -= IMPROVEMENT_COST
+
+        // choose to continue with \alpha or \alphaPrime
+        if (dist_Q_after_vote.meanQltyEst <
+          dist_QPrime_after_vote.meanQltyEst)
+            f_Q_of_q = f_Q_of_qPrime
+
+        // use majority vote to update GX
+        re_estimate_worker_accuracy()
+
+        // clear votes out
+        votes = List[Boolean]()
+    }
 
     /******* UNIMPLEMENTED **********/
-    def estimate_prior_for_alphaPrime() = ???
+    def estimate_prior_for_alphaPrime() = ???  // TODO
 
-    def update_posteriors_for_alphas() = ???
+    def update_posteriors_for_alphas() = ???  // TODO
 
-    /* this thing should clear out the ("votes": List[Boolean]),
-     * which should /not/ be contained within its own class
-     */
-    def improvement_job(): QualityDistribution = { ??? }
-
-    def update_belief_state() { ??? }
+    def update_belief_state() { ??? }  // TODO
 }
 
 object FirstExperiment
@@ -324,5 +335,5 @@ object FirstExperiment
 }
 
 object TestStuff extends App {
-    // FirstExperiment.qstn.choose_action()
+    // while(true) FirstExperiment.qstn.choose_action()
 }
