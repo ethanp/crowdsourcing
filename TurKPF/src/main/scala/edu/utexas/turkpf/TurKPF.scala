@@ -9,7 +9,7 @@
  */
 
 import math._
-import org.apache.commons.math3.distribution.{RealDistribution, BetaDistribution, NormalDistribution}
+import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
 
 /* this means I can choose all new parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
@@ -22,11 +22,10 @@ import FirstExperiment._
  */
 case class BallotJob()
 {
-    val ballotCost = .01
-
     /* TODO doesn't incorporate the observation value of having obtained the ballots */
     // [DTC] (eq. 9)
-    def utility_of_stopping_voting: Double = {max(
+    // TODO this eq. is also used to decide which of the artifacts to keep [DTC top-right pg. 4]
+    def utility_of_stopping_voting: Double = { max(
         qstn.convolute_Utility_with_Particles(qstn.f_Q_of_q),  // [DTC] (eq. 10)
 
         // TODO this a placeholder, "PREDICT" /SHOULD/ have been done by this point
@@ -38,7 +37,8 @@ case class BallotJob()
     /* What this Does:
      * Creates a posterior distribution (estimate) of the quality of the artifact
      *  given one more ballot
-     * I don't think this same function can be easily used for both f_Q and f_Q'
+     * I now think this same function can be easily used for both f_Q and f_Q'
+     *  (just pass in the two particle-sets as parameters, and switch the order)
      *
      * PSEUDOCODE:
      * Create a new Particle Filter-based distribution from the old one
@@ -48,12 +48,13 @@ case class BallotJob()
      */
     def dist_Q_after_vote: QualityDistribution = {
         val predictedParticles = qstn.f_Q_of_q.predict.particles
-        QualityDistribution(NUM_PARTICLES, new BetaDistribution(1,9),
-            qstn.f_Q_of_q.particles.map( particle =>
-                particle * predictedParticles.foldLeft(0.0)((sum, particlePrime) =>    // [DTC] (eq. 6)
-                    sum + particlePrime * qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
-                )
-            )
+        QualityDistribution(NUM_PARTICLES,
+            qstn.f_Q_of_q.particles.map { particle =>
+                particle * predictedParticles.foldLeft(0.0)((sum, particlePrime) => // [DTC] (eq. 6)
+                    sum + particlePrime *
+                      qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime) / NUM_PARTICLES
+                ) / NUM_PARTICLES
+            }
         )
     }
 
@@ -62,12 +63,13 @@ case class BallotJob()
      */
     def dist_QPrime_after_vote: QualityDistribution = {
         val predictedParticles = qstn.f_Q_of_q.predict.particles
-        QualityDistribution(NUM_PARTICLES, new BetaDistribution(1,9),
-            predictedParticles.map( particlePrime =>
-                particlePrime * qstn.f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>    // [DTC] (eq. 6)
-                    sum + particle * qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
-                )
-            )
+        QualityDistribution(NUM_PARTICLES,
+            predictedParticles.map {particlePrime =>
+                particlePrime * qstn.f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
+                    sum + particle
+                      * qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime) / NUM_PARTICLES
+                ) / NUM_PARTICLES
+            }
         )
     }
 
@@ -84,15 +86,16 @@ case class BallotJob()
         val predictedParticles = qstn.f_Q_of_q.predict.particles
         qstn.f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
             sum + particle * predictedParticles.foldLeft(0.0)((sum2, primeParticle) =>
-                sum2 + qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, primeParticle) * primeParticle
-            )
+                sum2 + qstn.wrkrs.GENERAL_prob_true_given_Qs(particle, primeParticle)
+                  * primeParticle / NUM_PARTICLES
+            ) / NUM_PARTICLES
         )
     }
 
     /* PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
-     * First I need to use (eq. 5) [as-yet unimplemented] to generate f_{ Q | b_{n} + 1 } (q)
-     * For each particle in the result of performing (eq. 5)
-     *   For b_{n+1} \in {0,1}
+     * First, I need to use (eq. 5) (as-yet unimplemented) to generate f_{ Q | b_{n} + 1 } (q)
+     * Then, For each particle in the result of performing (eq. 5)
+     *   For each vote outcome \in { 0, 1 }
      *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
      */
     def expVal_OLD_artifact_with_addnl_vote = ???
@@ -108,28 +111,25 @@ case class BallotJob()
         ) - BALLOT_COST * UTILITY_OF_$$$
     }
 
-    def need_another_vote: Boolean = utility_of_stopping_voting < utility_of_voting
-
     def get_addnl_ballot(): Boolean = {
-        qstn.balance -= ballotCost  // pay for it
-        qstn.wrkrs.generateVote(qstn.artifact_difficulty)
+        qstn.balance -= BALLOT_COST  // pay for it
+        val vote: Boolean = qstn.wrkrs.generateVote(qstn.artifact_difficulty)
+        votes ::= vote
+        vote
     }
 
     var votes = List[Boolean]()
 
-    while (need_another_vote) {
-        votes ::= get_addnl_ballot()
-    }
     qstn.wrkrs.updateGX(votes)
 }
 
 /* prior quality estimate distribution f_Q (q) */
 case class QualityDistribution(numParticles: Int,
-                               dist: RealDistribution,
                                particles: Array[Double])
 {
-    def this(numParticles: Int, dist: RealDistribution) =
-        this(numParticles, dist, dist.sample(numParticles))
+    def this(numParticles: Int) = this(numParticles, new BetaDistribution(1,9).sample(numParticles))
+    def this(particles: Array[Double]) = this(NUM_PARTICLES, particles)
+    def this() = this(NUM_PARTICLES)
 
     def find_improvementFunctionMean(qlty: Double): Double = { // [DTC] (eq. 13)
     val accuracy: Double = qstn.wrkrs.accuracy(qstn.artifact_difficulty)
@@ -143,7 +143,7 @@ case class QualityDistribution(numParticles: Int,
 
     // [DTC] (eq. 1), q => generate f_{ Q' | particle.q } (q') and sample from it
     /* This function is the kernel of this whole thing.
-     * THE WAY THIS WORKS: (I already forgot, so I need to document it for myself)
+     * THE WAY THIS WORKS:
      * We go through each particle, and using its value (which is an estimate of the qlty),
      * we generate an "improvement distribution" which is f_{ Q' | particle.q } (q').
      * This distribution describes how much we can expect [an avg.] worker to improve the
@@ -154,7 +154,7 @@ case class QualityDistribution(numParticles: Int,
      * snazzier with it.
      */
     def predict: QualityDistribution =
-        QualityDistribution(numParticles, dist, particles map {improvementDistr(_).sample})
+        QualityDistribution(numParticles, particles map {improvementDistr(_).sample})
 
     // [DTC] (eqs. 4-6)
     def observe(vote: Boolean): QualityDistribution = { ??? }
@@ -214,15 +214,14 @@ case class Question(trueAnswer: Boolean)
     var qlty = INITIAL_QUALITY
     var qltyPrime = 0.0
 
-    // [DTC] trueGX > 0; code is dist-agnostic
+    // [DTC] trueGX > 0; code is worker_dist-agnostic
     var workerTrueGm = WORKER_DIST.sample
     while (workerTrueGm < 0) workerTrueGm = WORKER_DIST.sample
 
     val wrkrs = Workers(workerTrueGm)
 
     // [DTC] § Experimental Setup
-    val f_Q_of_q =
-        new QualityDistribution(NUM_PARTICLES, new BetaDistribution(1, 9))
+    val f_Q_of_q = new QualityDistribution  // defaults to BetaDist(1,9)
 
 
     def artifact_difficulty: Double = difficulty(qlty, qltyPrime)
@@ -233,12 +232,17 @@ case class Question(trueAnswer: Boolean)
     }
 
     // was including $$ correct?
+    /* TODO this is incorrect, bc qlty represents the TRUE quality, not the est'd quality,
+     * which is represented by a probability distribution.
+     *  So here, I /should/ be passing in the mean of that distribution or something.
+     */
     def artifact_utility: Double = estimate_artifact_utility(qlty) + balance * UTILITY_OF_$$$
 
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
         dist.particles.foldLeft(0.0)(
             (sum, particle) =>
-                sum + (estimate_artifact_utility(particle)/NUM_PARTICLES))
+                sum + estimate_artifact_utility(particle) / NUM_PARTICLES
+        )
     }
 
     // [DTC] (eq. 12)
@@ -247,7 +251,9 @@ case class Question(trueAnswer: Boolean)
         val f_qPrime = f_Q_of_q.predict
         f_Q_of_q.particles.foldLeft(0.0)((sum, q) =>
             sum + f_qPrime.particles.foldLeft(0.0)((sum2, qPrime) =>
-                sum2 + q * qPrime * difficulty(q, qPrime) / (NUM_PARTICLES * NUM_PARTICLES)))
+                sum2 + q * qPrime * difficulty(q, qPrime) / NUM_PARTICLES
+            ) / NUM_PARTICLES
+        )
     }
 
     def submit_final() = {
@@ -255,12 +261,15 @@ case class Question(trueAnswer: Boolean)
         sys.exit(0)
     }
 
+    // TODO this seems like a sloppy way to hold on to this
+    var current_ballot_job = new BallotJob
+
     def choose_action() {
-        if (artifact_utility > utility_of_ballot_job
+        if (artifact_utility > current_ballot_job.utility_of_voting
           && artifact_utility > utility_of_improvement_job)
             submit_final()
-        else if (utility_of_ballot_job > utility_of_improvement_job)
-            BallotJob
+        else if (current_ballot_job.utility_of_voting > utility_of_improvement_job)
+            current_ballot_job = new BallotJob
         else
             improvement_job()
     }
@@ -280,9 +289,10 @@ case class Question(trueAnswer: Boolean)
 
     def update_posteriors_for_alphas() = ???
 
+    /* this thing should clear out the ("votes": List[Boolean]),
+     * which should /not/ be contained within its own class
+     */
     def improvement_job(): QualityDistribution = { ??? }
-
-    def utility_of_ballot_job: Double = ???
 
     def re_estimate_worker_accuracy(workerIndex: Int) { ??? }
 
@@ -293,7 +303,7 @@ object FirstExperiment
 {
     /* [DTC] gmX "follow a bell shaped distribution" "average error coefficient gm=1",
      *      although note that gmX > 0 */
-    val WORKER_DIST = new NormalDistribution(1,1)
+    val WORKER_DIST = new NormalDistribution(1,0.2)
 
     /* this is a method so that it generates a new initial quality every time a question starts */
     def INITIAL_QUALITY = new BetaDistribution(1,9).sample
@@ -318,4 +328,6 @@ object FirstExperiment
     val qstn = Question(trueAnswer=true)
 }
 
-object TestStuff extends App {}
+object TestStuff extends App {
+    // FirstExperiment.qstn.choose_action()
+}
