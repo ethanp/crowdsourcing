@@ -139,16 +139,10 @@ case class Question(trueAnswer: Boolean)
         1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
     }
 
-    // was including $$ correct?
-    /* TODO this is incorrect, bc qlty represents the TRUE quality, not the est'd quality,
-     * which is represented by a probability distribution.
-     *  So here, I /should/ be passing in the mean of that distribution or something.
-     */
-    def artifact_utility: Double = estimate_artifact_utility(qlty) + balance * UTILITY_OF_$$$
+    def artifact_utility: Double = estimate_artifact_utility(f_Q_of_q.meanQltyEst) + balance * UTILITY_OF_$$$
 
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
-        dist.particles.foldLeft(0.0)(
-            (sum, particle) =>
+        dist.particles.foldLeft(0.0)((sum, particle) =>
                 sum + estimate_artifact_utility(particle) / NUM_PARTICLES
         )
     }
@@ -196,6 +190,19 @@ case class Question(trueAnswer: Boolean)
         convolute_Utility_with_Particles(f_Q_of_qPrime)  // [DTC] (eq. 11)
     )}
 
+    def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution): QualityDistribution = {
+        QualityDistribution(NUM_PARTICLES,
+            a.particles.map { particle =>
+                particle * b.particles.foldLeft(0.0)((sum, particlePrime) => // [DTC] (eq. 6)
+                {
+                    val probTrue: Double = wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
+                    sum + particlePrime * invertIfFalse(vote, probTrue) / NUM_PARTICLES
+                }
+                ) / NUM_PARTICLES
+            }
+        )
+    }
+
     // [DTC] (eq. 5)
     /* What this Does:
      * Creates a posterior distribution (estimate) of the quality of the artifact
@@ -210,33 +217,14 @@ case class Question(trueAnswer: Boolean)
      * to obtain f_Q|(bn + 1)
      */
     def dist_Q_after_vote(vote: Boolean): QualityDistribution = {
-        val predictedParticles = f_Q_of_qPrime.particles
-        QualityDistribution(NUM_PARTICLES,
-            f_Q_of_q.particles.map { particle =>
-                particle * predictedParticles.foldLeft(0.0)((sum, particlePrime) => // [DTC] (eq. 6)
-                    {
-                        val probTrue: Double = wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
-                        sum + particlePrime * invertIfFalse(vote, probTrue) / NUM_PARTICLES
-                    }
-                ) / NUM_PARTICLES
-            }
-        )
+        dist_after_vote_helper(vote, f_Q_of_q, f_Q_of_qPrime)
     }
 
     /* [DTC] (eq. 7-8) basically the same as above, but the order in
      *   which the distributions are used is switched
      */
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution = {
-        QualityDistribution(NUM_PARTICLES,
-            f_Q_of_qPrime.particles.map {particlePrime =>
-                particlePrime * f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
-                    {
-                        val probTrue: Double = wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
-                        sum + particle * invertIfFalse(vote, probTrue) / NUM_PARTICLES
-                    }
-                ) / NUM_PARTICLES
-            }
-        )
+        dist_after_vote_helper(vote, f_Q_of_qPrime, f_Q_of_q)
     }
 
     def invertIfFalse(truth: Boolean, value: Double): Double = if (truth) value else 1-value
@@ -278,7 +266,7 @@ case class Question(trueAnswer: Boolean)
      */
     def expVal_OLD_artifact_with_addnl_vote: Double = expVal_after_a_vote(dist_Q_after_vote)
 
-    // E[ U( Q' | b_{n} + 1 ) ] basically the same thing as above
+    // E[ U( Q' | b_{n} + 1 ) ]; the same thing as above
     def expVal_NEW_artifact_with_addnl_vote = expVal_after_a_vote(dist_QPrime_after_vote)
 
     // [DTC] (bottom-left Pg. 4)
