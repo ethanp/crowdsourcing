@@ -239,15 +239,14 @@ case class Question(trueAnswer: Boolean)
         )
     }
 
-    def expVal_given_dist(d: QualityDistribution): Double = {
-        val probYes = probability_of_yes_vote
+    def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
         d.particles.foldLeft(0.0)((sum, particle) =>
             sum + particle * probYes * estimate_artifact_utility(particle)
         ) / NUM_PARTICLES
     }
 
-    def expVal_after_a_vote(f: Boolean => QualityDistribution): Double = {
-        expVal_given_dist(f(true)) + expVal_given_dist(f(false))
+    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double = {
+        expVal_given_dist(f(true), probYes) + expVal_given_dist(f(false), probYes)
     }
 
     /* [DTC] (bottom-left Pg. 4)
@@ -256,20 +255,21 @@ case class Question(trueAnswer: Boolean)
      *   For each vote outcome \in { 0, 1 }
      *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
      */
-    def expVal_OLD_artifact_with_addnl_vote: Double = {
-        expVal_after_a_vote(dist_Q_after_vote)
+    def expVal_OLD_artifact_with_addnl_vote(probYes: Double): Double = {
+        expVal_after_a_vote(dist_Q_after_vote, probYes)
     }
 
     // E[ U( Q' | b_{n} + 1 ) ]; the same thing as above
-    def expVal_NEW_artifact_with_addnl_vote = {
-        expVal_after_a_vote(dist_QPrime_after_vote)
+    def expVal_NEW_artifact_with_addnl_vote(probYes: Double) = {
+        expVal_after_a_vote(dist_QPrime_after_vote, probYes)
     }
 
     // [DTC] (bottom-left Pg. 4)
     def utility_of_voting: Double = {
+        val probYes = probability_of_yes_vote
         max(
-            expVal_OLD_artifact_with_addnl_vote,
-            expVal_NEW_artifact_with_addnl_vote
+            expVal_OLD_artifact_with_addnl_vote(probYes),
+            expVal_NEW_artifact_with_addnl_vote(probYes)
         ) - BALLOT_COST * UTILITY_OF_$$$
     }
 
