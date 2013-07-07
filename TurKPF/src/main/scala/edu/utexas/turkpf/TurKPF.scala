@@ -15,8 +15,6 @@ import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistributi
  *  import SecondExperiment._  and so on  */
 import FirstExperiment._
 
-/* TODO: abstract out all the convolutions so they become more legible */
-
 /* Particle Filter representation of
  * artifact quality probability density functions
  *      f_{Q}(q)
@@ -148,7 +146,6 @@ case class Question(trueAnswer: Boolean)
      */
     def artifact_utility: Double = estimate_artifact_utility(qlty) + balance * UTILITY_OF_$$$
 
-    // CONVOLUTION
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
         dist.particles.foldLeft(0.0)(
             (sum, particle) =>
@@ -158,7 +155,6 @@ case class Question(trueAnswer: Boolean)
 
     // [DTC] (eq. 12)
     // this is O(numParticles^2)...they also note that this equation takes a while
-    // CONVOLUTION
     def dStar: Double = {
         f_Q_of_q.particles.foldLeft(0.0)((sum, q) =>
             sum + f_Q_of_qPrime.particles.foldLeft(0.0)((sum2, qPrime) =>
@@ -193,7 +189,6 @@ case class Question(trueAnswer: Boolean)
 
     /******* Was class BallotJob, moved it in here bc that's not a separate entity *****/
 
-    /* TODO doesn't incorporate the observation value of having obtained the ballots */
     // [DTC] (eq. 9)
     // TODO this eq. is also used to decide which of the artifacts to keep [DTC top-right pg. 4]
     def utility_of_stopping_voting: Double = { max(
@@ -202,7 +197,6 @@ case class Question(trueAnswer: Boolean)
     )}
 
     // [DTC] (eq. 5)
-    // TODO: Don't use f_Q_of_q, use f_Q_of_q_given_Bn
     /* What this Does:
      * Creates a posterior distribution (estimate) of the quality of the artifact
      *  given one more ballot
@@ -215,7 +209,6 @@ case class Question(trueAnswer: Boolean)
      *   multiply it against the convolution of f_Q'|bn with P(b|q,q')
      * to obtain f_Q|(bn + 1)
      */
-    // CONVOLUTION
     def dist_Q_after_vote(vote: Boolean): QualityDistribution = {
         val predictedParticles = f_Q_of_qPrime.particles
         QualityDistribution(NUM_PARTICLES,
@@ -233,7 +226,6 @@ case class Question(trueAnswer: Boolean)
     /* [DTC] (eq. 7-8) basically the same as above, but the order in
      *   which the distributions are used is switched
      */
-    // CONVOLUTION
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution = {
         QualityDistribution(NUM_PARTICLES,
             f_Q_of_qPrime.particles.map {particlePrime =>
@@ -258,7 +250,6 @@ case class Question(trueAnswer: Boolean)
      *   This convolution will yield a scalar
      * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
      */
-    // CONVOLUTION
     def probability_of_yes_vote = {
         f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
             sum + particle * f_Q_of_qPrime.particles.foldLeft(0.0)((sum2, primeParticle) =>
@@ -268,18 +259,27 @@ case class Question(trueAnswer: Boolean)
         )
     }
 
-    /* PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
-     * First, I need to use (eq. 5) (as-yet unimplemented) to generate f_{ Q | b_{n} + 1 } (q)
+    def expVal_given_dist(d: QualityDistribution): Double = {
+        val probYes = probability_of_yes_vote
+        d.particles.foldLeft(0.0)((sum, particle) =>
+            sum + particle * probYes * estimate_artifact_utility(particle)
+        ) / NUM_PARTICLES
+    }
+
+    def expVal_after_a_vote(f: Boolean => QualityDistribution): Double = {
+        expVal_given_dist(f(true)) + expVal_given_dist(f(false))
+    }
+
+    /* [DTC] (bottom-left Pg. 4)
+     * PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
      * Then, For each particle in the result of performing (eq. 5)
      *   For each vote outcome \in { 0, 1 }
      *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
      */
-    // TODO use dist_Q_after_vote ?
-    def expVal_OLD_artifact_with_addnl_vote = ???
+    def expVal_OLD_artifact_with_addnl_vote: Double = expVal_after_a_vote(dist_Q_after_vote)
 
     // E[ U( Q' | b_{n} + 1 ) ] basically the same thing as above
-    // TODO use dist_QPrime_after_vote ?
-    def expVal_NEW_artifact_with_addnl_vote = ???
+    def expVal_NEW_artifact_with_addnl_vote = expVal_after_a_vote(dist_QPrime_after_vote)
 
     // [DTC] (bottom-left Pg. 4)
     def utility_of_voting: Double = {
