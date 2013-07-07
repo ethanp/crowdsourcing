@@ -15,21 +15,17 @@ import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistributi
  *  import SecondExperiment._  and so on  */
 import FirstExperiment._
 
-/* Particle Filter representation of
- * artifact quality probability density functions
- *      f_{Q}(q)
- *      f_{Q'}(q')
- *      f_{Q|bn}(q)
- *      f_{Q'|bn}(q)
- */
-case class QualityDistribution(numParticles: Int,
-                               particles: Array[Double])
+/* TODO: the LookAhead */
+
+/* Particle Filter representation of artifact quality probability density functions */
+case class QualityDistribution(numParticles: Int, particles: Array[Double])
 {
-    def this(numParticles: Int) = this(numParticles, new BetaDistribution(1,9).sample(numParticles))
+    def this(numParticles: Int) =
+        this(numParticles, new BetaDistribution(1,9).sample(numParticles))
 
     def this(particles: Array[Double]) = this(NUM_PARTICLES, particles)
 
-    def this() = this(NUM_PARTICLES, new BetaDistribution(1,9).sample(numParticles))
+    def this() = this(NUM_PARTICLES, new BetaDistribution(1,9).sample(NUM_PARTICLES))
 
     // [DTC] (eq. 13)
     def find_improvementFunctionMean(qlty: Double): Double = {
@@ -58,11 +54,6 @@ case class QualityDistribution(numParticles: Int,
     def predict: QualityDistribution =
         new QualityDistribution(particles map {improvementDistr(_).sample})
 
-    // [DTC] (eqs. 4,5,6,7,8)
-    def observe(vote: Boolean) {
-        qstn.f_Q_of_q      = qstn.dist_Q_after_vote(vote)
-        qstn.f_Q_of_qPrime = qstn.dist_QPrime_after_vote(vote)
-    }
 
     // TODO
     def re_estimate { ??? }
@@ -131,7 +122,6 @@ case class Question(trueAnswer: Boolean)
 
     var f_Q_of_qPrime = new QualityDistribution
 
-
     def artifact_difficulty: Double = difficulty(qlty, qltyPrime)
 
     // [DTC] (eq. 2)
@@ -139,7 +129,9 @@ case class Question(trueAnswer: Boolean)
         1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
     }
 
-    def artifact_utility: Double = estimate_artifact_utility(f_Q_of_q.meanQltyEst) + balance * UTILITY_OF_$$$
+    def artifact_utility: Double = {
+        estimate_artifact_utility(f_Q_of_q.meanQltyEst) + balance * UTILITY_OF_$$$
+    }
 
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
         dist.particles.foldLeft(0.0)((sum, particle) =>
@@ -184,18 +176,18 @@ case class Question(trueAnswer: Boolean)
     /******* Was class BallotJob, moved it in here bc that's not a separate entity *****/
 
     // [DTC] (eq. 9)
-    // TODO this eq. is also used to decide which of the artifacts to keep [DTC top-right pg. 4]
     def utility_of_stopping_voting: Double = { max(
         convolute_Utility_with_Particles(f_Q_of_q),  // [DTC] (eq. 10)
         convolute_Utility_with_Particles(f_Q_of_qPrime)  // [DTC] (eq. 11)
     )}
 
-    def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution): QualityDistribution = {
+    def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution):
+    QualityDistribution = {
         QualityDistribution(NUM_PARTICLES,
             a.particles.map { particle =>
                 particle * b.particles.foldLeft(0.0)((sum, particlePrime) => // [DTC] (eq. 6)
                 {
-                    val probTrue: Double = wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
+                    val probTrue = wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
                     sum + particlePrime * invertIfFalse(vote, probTrue) / NUM_PARTICLES
                 }
                 ) / NUM_PARTICLES
@@ -220,7 +212,7 @@ case class Question(trueAnswer: Boolean)
         dist_after_vote_helper(vote, f_Q_of_q, f_Q_of_qPrime)
     }
 
-    /* [DTC] (eq. 7-8) basically the same as above, but the order in
+    /* [DTC] (eq. 7-8) the same as above, but the order in
      *   which the distributions are used is switched
      */
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution = {
@@ -264,10 +256,14 @@ case class Question(trueAnswer: Boolean)
      *   For each vote outcome \in { 0, 1 }
      *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
      */
-    def expVal_OLD_artifact_with_addnl_vote: Double = expVal_after_a_vote(dist_Q_after_vote)
+    def expVal_OLD_artifact_with_addnl_vote: Double = {
+        expVal_after_a_vote(dist_Q_after_vote)
+    }
 
     // E[ U( Q' | b_{n} + 1 ) ]; the same thing as above
-    def expVal_NEW_artifact_with_addnl_vote = expVal_after_a_vote(dist_QPrime_after_vote)
+    def expVal_NEW_artifact_with_addnl_vote = {
+        expVal_after_a_vote(dist_QPrime_after_vote)
+    }
 
     // [DTC] (bottom-left Pg. 4)
     def utility_of_voting: Double = {
@@ -277,10 +273,11 @@ case class Question(trueAnswer: Boolean)
         ) - BALLOT_COST * UTILITY_OF_$$$
     }
 
-    def get_addnl_ballot(): Boolean = {
+    def get_addnl_ballot_and_update_dists(): Boolean = {
         balance -= BALLOT_COST  // pay for it
         val vote: Boolean = wrkrs.generateVote(artifact_difficulty)
-        f_Q_of_q.observe(vote)  // this is ugly...
+        f_Q_of_q      = dist_Q_after_vote(vote)  // [DTC] (eqs. 4,5,6,7,8)
+        f_Q_of_qPrime = dist_QPrime_after_vote(vote)
         votes ::= vote
         vote
     }
@@ -291,8 +288,9 @@ case class Question(trueAnswer: Boolean)
         // pay for it
         balance -= IMPROVEMENT_COST
 
-        // choose to continue with \alpha or \alphaPrime
-        if (f_Q_of_q.meanQltyEst < f_Q_of_qPrime.meanQltyEst)
+        // choose to continue with alpha or alphaPrime [DTC top-right pg. 4]
+        if (convolute_Utility_with_Particles(f_Q_of_q)
+          < convolute_Utility_with_Particles(f_Q_of_qPrime))
             f_Q_of_q = f_Q_of_qPrime
 
         // use majority vote to update GX
@@ -308,15 +306,19 @@ case class Question(trueAnswer: Boolean)
 
 object FirstExperiment
 {
-    /* [DTC] gmX "follow a bell shaped distribution" "average error coefficient gm=1",
-     *      although note that gmX > 0 */
+    /* [DTC] gmX "follow a bell shaped distribution"
+     *           "average error coefficient gm=1",
+     *             where gmX > 0 */
     val WORKER_DIST = new NormalDistribution(1,0.2)
 
-    /* this is a method so that it generates a new initial quality every time a question starts */
+    /* this is a method so that it generates a new
+     * initial quality every time a question starts */
     def INITIAL_QUALITY = new BetaDistribution(1,9).sample
 
     // [DTC] § Experimental Setup
-    def estimate_artifact_utility(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)
+    def estimate_artifact_utility(qlty: Double): Double = {
+        1000 * (exp(qlty) - 1) / (exp(1) - 1)
+    }
 
     val IMPROVEMENT_COST    = .05
     val BALLOT_COST         = .01
