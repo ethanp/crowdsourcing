@@ -163,7 +163,16 @@ case class Question(trueAnswer: Boolean)
         convolute_Utility_with_Particles(f_Q_of_qPrime)  // [DTC] (eq. 11)
     )}
 
-    def invertIfFalse(t: Boolean, v: Double): Double = if (t) v else 1-v
+    /***************************** BALLOT JOB STUFF *******************************/
+    // [DTC] (bottom-left Pg. 4)
+    def utility_of_voting: Double = {
+        val probYes = probability_of_yes_vote
+        println("probYes: " + probYes)
+        max(
+            expVal_OLD_artifact_with_addnl_vote(probYes),
+            expVal_NEW_artifact_with_addnl_vote(probYes)
+        ) - BALLOT_COST * UTILITY_OF_$$$
+    }
 
     // [DTC] (bottom-left Pg. 4)
     /* PSEUDOCODE for calculating P(b_{n+1}):
@@ -181,19 +190,29 @@ case class Question(trueAnswer: Boolean)
         ) / NUM_PARTICLES
     }
 
-    /***************************** BALLOT JOB STUFF *******************************/
-    def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution):
-    QualityDistribution = {
-        QualityDistribution(NUM_PARTICLES,
-            a.particles.map { partA =>
-                partA * b.particles.foldLeft(0.0)((sum, partB) => // [DTC] (eq. 6)
-                {
-                    val probTrue = wrkrs.GENERAL_prob_true_given_Qs(partA, partB)
-                    sum + partB * invertIfFalse(vote, probTrue) / NUM_PARTICLES
-                }
-                ) / NUM_PARTICLES
-            }
-        )
+    /* [DTC] (bottom-left Pg. 4)
+     * PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
+     * Then, For each particle in the result of performing (eq. 5)
+     *   For each vote outcome \in { 0, 1 }
+     *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
+     */
+    def expVal_OLD_artifact_with_addnl_vote(probYes: Double): Double = {
+        expVal_after_a_vote(dist_Q_after_vote, probYes)
+    }
+
+    // E[ U( Q' | b_{n} + 1 ) ]; the same thing as above
+    def expVal_NEW_artifact_with_addnl_vote(probYes: Double) = {
+        expVal_after_a_vote(dist_QPrime_after_vote, probYes)
+    }
+
+    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double = {
+        expVal_given_dist(f(true), probYes) + expVal_given_dist(f(false), probYes)
+    }
+
+    def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
+        d.particles.foldLeft(0.0)((sum, particle) =>
+            sum + particle * probYes * estimate_artifact_utility(particle)
+        ) / NUM_PARTICLES
     }
 
     // [DTC] (eq. 5)
@@ -220,39 +239,18 @@ case class Question(trueAnswer: Boolean)
         dist_after_vote_helper(vote, f_Q_of_qPrime, f_Q_of_q)
     }
 
-    def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
-        d.particles.foldLeft(0.0)((sum, particle) =>
-            sum + particle * probYes * estimate_artifact_utility(particle)
-        ) / NUM_PARTICLES
-    }
-
-    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double = {
-        expVal_given_dist(f(true), probYes) + expVal_given_dist(f(false), probYes)
-    }
-
-    /* [DTC] (bottom-left Pg. 4)
-     * PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
-     * Then, For each particle in the result of performing (eq. 5)
-     *   For each vote outcome \in { 0, 1 }
-     *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
-     */
-    def expVal_OLD_artifact_with_addnl_vote(probYes: Double): Double = {
-        expVal_after_a_vote(dist_Q_after_vote, probYes)
-    }
-
-    // E[ U( Q' | b_{n} + 1 ) ]; the same thing as above
-    def expVal_NEW_artifact_with_addnl_vote(probYes: Double) = {
-        expVal_after_a_vote(dist_QPrime_after_vote, probYes)
-    }
-
-    // [DTC] (bottom-left Pg. 4)
-    def utility_of_voting: Double = {
-        val probYes = probability_of_yes_vote
-        println("probYes: " + probYes)
-        max(
-            expVal_OLD_artifact_with_addnl_vote(probYes),
-            expVal_NEW_artifact_with_addnl_vote(probYes)
-        ) - BALLOT_COST * UTILITY_OF_$$$
+    def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution):
+    QualityDistribution = {
+        QualityDistribution(NUM_PARTICLES,
+            a.particles.map { partA =>
+                partA * b.particles.foldLeft(0.0)((sum, partB) => // [DTC] (eq. 6)
+                {
+                    val probTrue = wrkrs.GENERAL_prob_true_given_Qs(partA, partB)
+                    sum + partB * invertIfFalse(vote, probTrue) / NUM_PARTICLES
+                }
+                ) / NUM_PARTICLES
+            }
+        )
     }
 
     def get_addnl_ballot_and_update_dists(): Boolean = {
@@ -265,6 +263,8 @@ case class Question(trueAnswer: Boolean)
     }
 
     var votes = List[Boolean]()
+
+    def invertIfFalse(t: Boolean, v: Double): Double = if (t) v else 1-v
     /******************************************************************************/
 
     def improvement_job() {
