@@ -186,8 +186,8 @@ case class Question(trueAnswer: Boolean)
         f_Q_of_q.particles.foldLeft(0.0)((sumA, particleA) =>
             sumA + particleA * f_Q_of_qPrime.particles.foldLeft(0.0)((sumB, particleB) =>
                 sumB + wrkrs.GENERAL_prob_true_given_Qs(particleA, particleB) * particleB
-            ) / NUM_PARTICLES
-        ) / NUM_PARTICLES
+            ) / f_Q_of_qPrime.particles.sum
+        ) / f_Q_of_q.particles.sum
     }
 
     /* [DTC] (bottom-left Pg. 4)
