@@ -89,14 +89,7 @@ case class Workers(trueGX: Double)
         estGX += smaller * (1 - d) * learningRate
     }
 
-    // this isn't used anywhere
-    def THE_prob_true_given_Qs: Double = {
-        GENERAL_prob_true_given_Qs(
-            qstn.f_Q_of_q.meanQltyEst,
-            qstn.f_Q_of_qPrime.meanQltyEst
-        )
-    }
-
+    // I checked and this function works properly
     def GENERAL_prob_true_given_Qs(q: Double, qPrime: Double): Double = {
         qstn.invertIfFalse(q < qPrime, accuracy(qstn.difficulty(q, qPrime)))
     }
@@ -117,7 +110,8 @@ case class Question(trueAnswer: Boolean)
     // [DTC] § Experimental Setup
     var f_Q_of_q = new QualityDistribution  // defaults to BetaDist(1,9)
 
-    // the idea here is to initialize the qPrime prior a little higher than the q prior
+    // my goal here is to initialize the qPrime prior a little higher than the q prior
+    // a better way to do this would be nice
     var f_Q_of_qPrime = new QualityDistribution(
         new BetaDistribution(2,9).sample(NUM_PARTICLES)
     )
@@ -169,6 +163,25 @@ case class Question(trueAnswer: Boolean)
         convolute_Utility_with_Particles(f_Q_of_qPrime)  // [DTC] (eq. 11)
     )}
 
+    def invertIfFalse(t: Boolean, v: Double): Double = if (t) v else 1-v
+
+    // [DTC] (bottom-left Pg. 4)
+    /* PSEUDOCODE for calculating P(b_{n+1}):
+     * For each particle in the "normal" set
+     *  "Convolute" the [entire] "predicted" set of particles with the accuracy according to whether
+     *  the particle in the predicted set has a higher value than the one in the normal set (eq. 3)
+     *   This convolution will yield a scalar
+     * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
+     */
+    def probability_of_yes_vote = {
+        f_Q_of_q.particles.foldLeft(0.0)((sumA, particleA) =>
+            sumA + particleA * f_Q_of_qPrime.particles.foldLeft(0.0)((sumB, particleB) =>
+                sumB + wrkrs.GENERAL_prob_true_given_Qs(particleA, particleB) * particleB
+            ) / NUM_PARTICLES
+        ) / NUM_PARTICLES
+    }
+
+    /***************************** BALLOT JOB STUFF *******************************/
     def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution):
     QualityDistribution = {
         QualityDistribution(NUM_PARTICLES,
@@ -191,10 +204,10 @@ case class Question(trueAnswer: Boolean)
      *  (just pass in the two particle-sets as parameters, and switch the order)
      *
      * PSEUDOCODE:
-     * Create a new Particle Filter-based distribution from the old one
-     * For each particle in f_Q|bn,
-     *   multiply it against the convolution of f_Q'|bn with P(b|q,q')
-     * to obtain f_Q|(bn + 1)
+     * Create a new Particle_Filter-based distribution from the old one
+     * For each particle in f_{Q|bn},
+     *   multiply it against the convolution of f_{Q'|bn} with P(b|q,q')
+     * to obtain f_{Q|(bn + 1)}
      */
     def dist_Q_after_vote(vote: Boolean): QualityDistribution = {
         dist_after_vote_helper(vote, f_Q_of_q, f_Q_of_qPrime)
@@ -205,25 +218,6 @@ case class Question(trueAnswer: Boolean)
      */
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution = {
         dist_after_vote_helper(vote, f_Q_of_qPrime, f_Q_of_q)
-    }
-
-    def invertIfFalse(t: Boolean, v: Double): Double = if (t) v else 1-v
-
-    // [DTC] (bottom-left Pg. 4)
-    /* PSEUDOCODE for calculating P(b_{n+1}):
-     * For each particle in the "normal" set
-     *  "Convolute" the [entire] "predicted" set of particles with the accuracy according to whether
-     *  the particle in the predicted set has a higher value than the one in the normal set (eq. 3)
-     *   This convolution will yield a scalar
-     * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
-     */
-    def probability_of_yes_vote = {
-        f_Q_of_q.particles.foldLeft(0.0)((sumA, particleA) =>
-            sumA + particleA * f_Q_of_qPrime.particles.foldLeft(0.0)((sumB, particleB) =>
-                sumB + wrkrs.GENERAL_prob_true_given_Qs(particleA, particleB)
-                  * particleB / NUM_PARTICLES
-            ) / NUM_PARTICLES
-        )
     }
 
     def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
@@ -271,6 +265,7 @@ case class Question(trueAnswer: Boolean)
     }
 
     var votes = List[Boolean]()
+    /******************************************************************************/
 
     def improvement_job() {
         // pay for it
