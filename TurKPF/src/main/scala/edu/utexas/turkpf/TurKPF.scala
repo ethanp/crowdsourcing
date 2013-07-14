@@ -20,8 +20,7 @@ import FirstExperiment._
 /* Particle Filter representation of artifact quality probability density functions */
 case class QualityDistribution(numParticles: Int, particles: Array[Double])
 {
-    def this(numParticles: Int) =
-        this(numParticles, new BetaDistribution(1,9).sample(numParticles))
+    def this(n: Int) = this(n, new BetaDistribution(1,9).sample(n))
 
     def this(particles: Array[Double]) = this(NUM_PARTICLES, particles)
 
@@ -29,7 +28,7 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
 
     // [DTC] (eq. 13)
     def find_improvementFunctionMean(qlty: Double): Double = {
-        val accuracy: Double = qstn.wrkrs.accuracy(qstn.artifact_difficulty)
+        val accuracy: Double = qstn.wrkrs.accuracy(qlty)
         qlty + 0.5 * ((1 - qlty) * (accuracy - 0.5) + qlty * (accuracy - 1))
     }
 
@@ -83,13 +82,14 @@ case class Workers(trueGX: Double)
     def updateGX(votes: List[Boolean]) {    // [DTC] (below eq. 12)
         val (trues, falses) = votes.partition(_ == true)
         val trueBigger = trues.length > falses.length
-        val bigger = if (trueBigger) trues.length else falses.length
+        val bigger  = if (trueBigger) trues.length  else falses.length
         val smaller = if (trueBigger) falses.length else trues.length
         val d = qstn.artifact_difficulty
         estGX -= bigger * d * learningRate
         estGX += smaller * (1 - d) * learningRate
     }
 
+    // this isn't used anywhere
     def THE_prob_true_given_Qs: Double = {
         GENERAL_prob_true_given_Qs(
             qstn.f_Q_of_q.meanQltyEst,
@@ -97,11 +97,8 @@ case class Workers(trueGX: Double)
         )
     }
 
-    def GENERAL_prob_true_given_Qs(q: Double, qP: Double): Double = {
-        qstn.invertIfFalse(
-            q < qP,
-            accuracy(qstn.difficulty(q, qP))
-        )
+    def GENERAL_prob_true_given_Qs(q: Double, qPrime: Double): Double = {
+        qstn.invertIfFalse(q < qPrime, accuracy(qstn.difficulty(q, qPrime)))
     }
 }
 
@@ -120,7 +117,10 @@ case class Question(trueAnswer: Boolean)
     // [DTC] § Experimental Setup
     var f_Q_of_q = new QualityDistribution  // defaults to BetaDist(1,9)
 
-    var f_Q_of_qPrime = new QualityDistribution
+    // the idea here is to initialize the qPrime prior a little higher than the q prior
+    var f_Q_of_qPrime = new QualityDistribution(
+        new BetaDistribution(2,9).sample(NUM_PARTICLES)
+    )
 
     def artifact_difficulty: Double = difficulty(qlty, qltyPrime)
 
@@ -129,8 +129,10 @@ case class Question(trueAnswer: Boolean)
         1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
     }
 
+    // TODO: decide which of these to use
     def artifact_utility: Double = {
-        estimate_artifact_utility(f_Q_of_q.meanQltyEst) + balance * UTILITY_OF_$$$
+        convolute_Utility_with_Particles(f_Q_of_q) + balance * UTILITY_OF_$$$
+//        estimate_artifact_utility(f_Q_of_q.meanQltyEst) + balance * UTILITY_OF_$$$
     }
 
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
@@ -154,26 +156,12 @@ case class Question(trueAnswer: Boolean)
         sys.exit(0)
     }
 
-    def choose_action() {
-        if (artifact_utility > utility_of_voting
-          && artifact_utility > utility_of_improvement_job)
-            submit_final()
-
-        else if (utility_of_voting > utility_of_improvement_job)
-            get_addnl_ballot()
-
-        else
-            improvement_job()
-    }
-
     // I had written that this is what the paper says to do,
-    //  but it seems hard to believe, so I oughtta check again
+    // Thinking it over again, it makes sense now too
     // [DTC] (top-right of page 4)
     def utility_of_improvement_job: Double = {
         utility_of_stopping_voting - IMPROVEMENT_COST * UTILITY_OF_$$$
     }
-
-    /******* Was class BallotJob, moved it in here bc that's not a separate entity *****/
 
     // [DTC] (eq. 9)
     def utility_of_stopping_voting: Double = { max(
@@ -184,11 +172,11 @@ case class Question(trueAnswer: Boolean)
     def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution):
     QualityDistribution = {
         QualityDistribution(NUM_PARTICLES,
-            a.particles.map { particle =>
-                particle * b.particles.foldLeft(0.0)((sum, particlePrime) => // [DTC] (eq. 6)
+            a.particles.map { partA =>
+                partA * b.particles.foldLeft(0.0)((sum, partB) => // [DTC] (eq. 6)
                 {
-                    val probTrue = wrkrs.GENERAL_prob_true_given_Qs(particle, particlePrime)
-                    sum + particlePrime * invertIfFalse(vote, probTrue) / NUM_PARTICLES
+                    val probTrue = wrkrs.GENERAL_prob_true_given_Qs(partA, partB)
+                    sum + partB * invertIfFalse(vote, probTrue) / NUM_PARTICLES
                 }
                 ) / NUM_PARTICLES
             }
@@ -219,10 +207,9 @@ case class Question(trueAnswer: Boolean)
         dist_after_vote_helper(vote, f_Q_of_qPrime, f_Q_of_q)
     }
 
-    def invertIfFalse(truth: Boolean, value: Double): Double = if (truth) value else 1-value
+    def invertIfFalse(t: Boolean, v: Double): Double = if (t) v else 1-v
 
     // [DTC] (bottom-left Pg. 4)
-    // this set of equations is the most intimidating set in this thing
     /* PSEUDOCODE for calculating P(b_{n+1}):
      * For each particle in the "normal" set
      *  "Convolute" the [entire] "predicted" set of particles with the accuracy according to whether
@@ -231,10 +218,10 @@ case class Question(trueAnswer: Boolean)
      * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
      */
     def probability_of_yes_vote = {
-        f_Q_of_q.particles.foldLeft(0.0)((sum, particle) =>
-            sum + particle * f_Q_of_qPrime.particles.foldLeft(0.0)((sum2, primeParticle) =>
-                sum2 + wrkrs.GENERAL_prob_true_given_Qs(particle, primeParticle)
-                  * primeParticle / NUM_PARTICLES
+        f_Q_of_q.particles.foldLeft(0.0)((sumA, particleA) =>
+            sumA + particleA * f_Q_of_qPrime.particles.foldLeft(0.0)((sumB, particleB) =>
+                sumB + wrkrs.GENERAL_prob_true_given_Qs(particleA, particleB)
+                  * particleB / NUM_PARTICLES
             ) / NUM_PARTICLES
         )
     }
@@ -267,6 +254,7 @@ case class Question(trueAnswer: Boolean)
     // [DTC] (bottom-left Pg. 4)
     def utility_of_voting: Double = {
         val probYes = probability_of_yes_vote
+        println("probYes: " + probYes)
         max(
             expVal_OLD_artifact_with_addnl_vote(probYes),
             expVal_NEW_artifact_with_addnl_vote(probYes)
@@ -302,6 +290,31 @@ case class Question(trueAnswer: Boolean)
         // create new prior for quality of improved artifact
         f_Q_of_qPrime = f_Q_of_q.predict
     }
+
+    def choose_action() {
+        val artifactUtility = artifact_utility
+        val voteUtility = utility_of_voting
+        val improvementUtility = utility_of_improvement_job
+
+        println("artifactUtility: " + artifactUtility)
+        println("voteUtility: " + voteUtility)
+        println("improvementUtility: " + improvementUtility)
+        println("meanQltyEst: " + qstn.f_Q_of_q.meanQltyEst)
+        println("PrimeMeanQltyEst: " + qstn.f_Q_of_qPrime.meanQltyEst)
+
+        if (artifactUtility > voteUtility
+          && artifactUtility > improvementUtility) {
+            submit_final()
+        }
+        else if (voteUtility > improvementUtility) {
+            println("ballot job\n")
+            get_addnl_ballot_and_update_dists()
+        }
+        else {
+            println("improvement job\n")
+            improvement_job()
+        }
+    }
 }
 
 object FirstExperiment
@@ -311,9 +324,9 @@ object FirstExperiment
      *             where gmX > 0 */
     val WORKER_DIST = new NormalDistribution(1,0.2)
 
-    /* this is a method so that it generates a new
+    /* this is a method so that it can be set to generate a random
      * initial quality every time a question starts */
-    def INITIAL_QUALITY = new BetaDistribution(1,9).sample
+    def INITIAL_QUALITY = .01 // new BetaDistribution(1,9).sample
 
     // [DTC] § Experimental Setup
     def estimate_artifact_utility(qlty: Double): Double = {
@@ -323,20 +336,17 @@ object FirstExperiment
     val IMPROVEMENT_COST    = .05
     val BALLOT_COST         = .01
     val DIFFICULTY_CONSTANT = 0.5
-    val LOOKAHEAD_DEPTH     = 3
+    val LOOKAHEAD_DEPTH     = 3  // not using this at this point
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 400.0
-    val NUM_PARTICLES       = 10000
-
-    // of course it's situation-dependent, but put a Good # here
-    val UTILITY_OF_$$$      = 5.0
+    val NUM_PARTICLES       = 100
+    val UTILITY_OF_$$$      = .005
 
     /* so that MANY Questions can be run Per Experiment
-     * I'ma start with just one question though, and try to get that working first
-     */
+     * I'ma try to get just one Question working first though */
     val qstn = Question(trueAnswer=true)
 }
 
 object TestStuff extends App {
-    // while(true) FirstExperiment.qstn.choose_action()
+    while(true) FirstExperiment.qstn.choose_action()
 }
