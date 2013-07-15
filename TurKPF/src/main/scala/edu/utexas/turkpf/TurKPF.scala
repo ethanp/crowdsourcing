@@ -16,6 +16,7 @@ import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistributi
 import FirstExperiment._
 
 /* TODO: the LookAhead */
+/* TODO: it shouldn't let you spend more than your allowance */
 
 /* Particle Filter representation of artifact quality probability density functions */
 case class QualityDistribution(numParticles: Int, particles: Array[Double])
@@ -70,7 +71,7 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
 case class Workers(trueGX: Double)
 {
     val learningRate = 0.05
-    var estGX: Double = 1    // set to the mean of the true distribution
+    var estGX: Double = .000001    // set to the mean of the true distribution
 
     // [DTC] (eq. 3)
     def generateVote(difficulty: Double): Boolean = random < accuracy(difficulty)
@@ -243,9 +244,9 @@ case class Question(trueAnswer: Boolean)
         dist_after_vote_helper(vote, f_Q_of_qPrime, f_Q_of_q)
     }
 
+    // [DTC] (eq. 6)
     def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution):
     QualityDistribution = {
-        val normA = a.particles.sum
         val normB = b.particles.sum
         QualityDistribution(NUM_PARTICLES,
             a.particles.map { partA =>
@@ -254,8 +255,8 @@ case class Question(trueAnswer: Boolean)
                     val probTrue = wrkrs.GENERAL_prob_true_given_Qs(partA, partB)
                     sum + partB * invertIfFalse(vote, probTrue) / normB
                 }
-                ) / normA
-            }
+                )  // I deleted normA from here after looking back at (eq. 5)
+            }      // and the voteUtility went up about 30x; was that right?
         )
     }
 
