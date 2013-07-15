@@ -61,6 +61,8 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
     def sample { ??? }
 
     // avg loc of particles in associated Particle Filter
+    // this doesn't actually make an appearance in the algorithm,
+    // it's just for debugging
     def meanQltyEst: Double = particles.sum / NUM_PARTICLES
 }
 
@@ -130,18 +132,21 @@ case class Question(trueAnswer: Boolean)
     }
 
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
+        val norm = dist.particles.sum
         dist.particles.foldLeft(0.0)((sum, particle) =>
-                sum + estimate_artifact_utility(particle) / NUM_PARTICLES
+            sum + estimate_artifact_utility(particle) / norm
         )
     }
 
     // [DTC] (eq. 12)
     // this is O(numParticles^2)...they also note that this equation takes a while
     def dStar: Double = {
+        val normQ = f_Q_of_q.particles.sum
+        val normQP = f_Q_of_qPrime.particles.sum
         f_Q_of_q.particles.foldLeft(0.0)((sum, q) =>
             sum + f_Q_of_qPrime.particles.foldLeft(0.0)((sum2, qPrime) =>
-                sum2 + q * qPrime * difficulty(q, qPrime) / NUM_PARTICLES
-            ) / NUM_PARTICLES
+                sum2 + q * qPrime * difficulty(q, qPrime) / normQ
+            ) / normQP
         )
     }
 
@@ -210,17 +215,16 @@ case class Question(trueAnswer: Boolean)
     }
 
     def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
+        val norm = d.particles.sum
         d.particles.foldLeft(0.0)((sum, particle) =>
             sum + particle * probYes * estimate_artifact_utility(particle)
-        ) / NUM_PARTICLES
+        ) / norm
     }
 
     // [DTC] (eq. 5)
     /* What this Does:
      * Creates a posterior distribution (estimate) of the quality of the artifact
      *  given one more ballot
-     * I now think this same function can be easily used for both f_Q and f_Q'
-     *  (just pass in the two particle-sets as parameters, and switch the order)
      *
      * PSEUDOCODE:
      * Create a new Particle_Filter-based distribution from the old one
@@ -241,14 +245,16 @@ case class Question(trueAnswer: Boolean)
 
     def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution):
     QualityDistribution = {
+        val normA = a.particles.sum
+        val normB = b.particles.sum
         QualityDistribution(NUM_PARTICLES,
             a.particles.map { partA =>
                 partA * b.particles.foldLeft(0.0)((sum, partB) => // [DTC] (eq. 6)
                 {
                     val probTrue = wrkrs.GENERAL_prob_true_given_Qs(partA, partB)
-                    sum + partB * invertIfFalse(vote, probTrue) / NUM_PARTICLES
+                    sum + partB * invertIfFalse(vote, probTrue) / normB
                 }
-                ) / NUM_PARTICLES
+                ) / normA
             }
         )
     }
