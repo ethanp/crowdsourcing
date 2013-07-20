@@ -71,7 +71,7 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
 case class Workers(trueGX: Double)
 {
     val learningRate = 0.05
-    var estGX: Double = .000001    // set to the mean of the true distribution
+    var estGX: Double = 1    // set to the mean of the true distribution
 
     // [DTC] (eq. 3)
     def generateVote(difficulty: Double): Boolean = random < accuracy(difficulty)
@@ -128,8 +128,8 @@ case class Question(trueAnswer: Boolean)
 
     // TODO: decide which of these to use
     def artifact_utility: Double = {
-        convolute_Utility_with_Particles(f_Q_of_q) + balance * UTILITY_OF_$$$
-//        estimate_artifact_utility(f_Q_of_q.meanQltyEst) + balance * UTILITY_OF_$$$
+        convolute_Utility_with_Particles(f_Q_of_q) + balance
+//        estimate_artifact_utility(f_Q_of_q.meanQltyEst) + balance
     }
 
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
@@ -160,7 +160,7 @@ case class Question(trueAnswer: Boolean)
     // Thinking it over again, it makes sense now too
     // [DTC] (top-right of page 4)
     def utility_of_improvement_job: Double = {
-        utility_of_stopping_voting - IMPROVEMENT_COST * UTILITY_OF_$$$
+        utility_of_stopping_voting - IMPROVEMENT_COST
     }
 
     // [DTC] (eq. 9)
@@ -177,7 +177,7 @@ case class Question(trueAnswer: Boolean)
         max(
             expVal_OLD_artifact_with_addnl_vote(probYes),
             expVal_NEW_artifact_with_addnl_vote(probYes)
-        ) - BALLOT_COST * UTILITY_OF_$$$
+        ) - BALLOT_COST
     }
 
     // [DTC] (bottom-left Pg. 4)
@@ -342,7 +342,7 @@ object FirstExperiment
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 400.0
     val NUM_PARTICLES       = 100
-    val UTILITY_OF_$$$      = .005
+//    val UTILITY_OF_$$$      = .005  // let's just say it's "1" for simplicity
 
     /* so that MANY Questions can be run Per Experiment
      * I'ma try to get just one Question working first though */
