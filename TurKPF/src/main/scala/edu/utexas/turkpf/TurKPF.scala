@@ -93,7 +93,7 @@ case class Workers(trueGX: Double)
     }
 
     // I checked and this function works properly
-    def GENERAL_prob_true_given_Qs(q: Double, qPrime: Double): Double = {
+    def prob_true_given_Qs(q: Double, qPrime: Double): Double = {
         qstn.invertIfFalse(q < qPrime, accuracy(qstn.difficulty(q, qPrime)))
     }
 }
@@ -133,10 +133,8 @@ case class Question(trueAnswer: Boolean)
     }
 
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
-        val norm = dist.particles.sum
-        dist.particles.foldLeft(0.0)((sum, particle) =>
-            sum + estimate_artifact_utility(particle) / norm
-        )
+        val norm = dist.particles.sum  // just compute it once
+        (0.0 /: dist.particles)(_ + estimate_artifact_utility(_) / norm)
     }
 
     // [DTC] (eq. 12)
@@ -144,8 +142,8 @@ case class Question(trueAnswer: Boolean)
     def dStar: Double = {
         val normQ = f_Q_of_q.particles.sum
         val normQP = f_Q_of_qPrime.particles.sum
-        f_Q_of_q.particles.foldLeft(0.0)((sum, q) =>
-            sum + f_Q_of_qPrime.particles.foldLeft(0.0)((sum2, qPrime) =>
+        (0.0 /: f_Q_of_q.particles)((sum, q) =>
+            sum + (0.0 /: f_Q_of_qPrime.particles)((sum2, qPrime) =>
                 sum2 + q * qPrime * difficulty(q, qPrime) / normQ
             ) / normQP
         )
@@ -189,9 +187,9 @@ case class Question(trueAnswer: Boolean)
      * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
      */
     def probability_of_yes_vote = {
-        f_Q_of_q.particles.foldLeft(0.0)((sumA, particleA) =>
-            sumA + particleA * f_Q_of_qPrime.particles.foldLeft(0.0)((sumB, particleB) =>
-                sumB + wrkrs.GENERAL_prob_true_given_Qs(particleA, particleB) * particleB
+        (0.0 /: f_Q_of_q.particles)((sumA, particleA) =>
+            sumA + particleA * (0.0 /: f_Q_of_qPrime.particles)((sumB, particleB) =>
+                sumB + wrkrs.prob_true_given_Qs(particleA, particleB) * particleB
             ) / f_Q_of_qPrime.particles.sum
         ) / f_Q_of_q.particles.sum
     }
@@ -217,7 +215,7 @@ case class Question(trueAnswer: Boolean)
 
     def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
         val norm = d.particles.sum
-        d.particles.foldLeft(0.0)((sum, particle) =>
+        (0.0 /: d.particles)((sum, particle) =>
             sum + particle * probYes * estimate_artifact_utility(particle)
         ) / norm
     }
@@ -234,25 +232,25 @@ case class Question(trueAnswer: Boolean)
      * to obtain f_{Q|(bn + 1)}
      */
     def dist_Q_after_vote(vote: Boolean): QualityDistribution = {
-        dist_after_vote_helper(vote, f_Q_of_q, f_Q_of_qPrime)
+        dist_after_vote_helper(vote, f_Q_of_q.particles, f_Q_of_qPrime.particles)
     }
 
     /* [DTC] (eq. 7-8) the same as above, but the order in
      *   which the distributions are used is switched
      */
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution = {
-        dist_after_vote_helper(vote, f_Q_of_qPrime, f_Q_of_q)
+        dist_after_vote_helper(vote, f_Q_of_qPrime.particles, f_Q_of_q.particles)
     }
 
     // [DTC] (eq. 6)
-    def dist_after_vote_helper(vote: Boolean, a: QualityDistribution, b: QualityDistribution):
+    def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
     QualityDistribution = {
-        val normB = b.particles.sum
+        val normB = arrB.sum
         QualityDistribution(NUM_PARTICLES,
-            a.particles.map { partA =>
-                partA * b.particles.foldLeft(0.0)((sum, partB) => // [DTC] (eq. 6)
+            arrA map { partA =>
+                partA * (0.0 /: arrB)((sum, partB) => // [DTC] (eq. 6)
                 {
-                    val probTrue = wrkrs.GENERAL_prob_true_given_Qs(partA, partB)
+                    val probTrue = wrkrs.prob_true_given_Qs(partA, partB)
                     sum + partB * invertIfFalse(vote, probTrue) / normB
                 }
                 )  // I deleted normA from here after looking back at (eq. 5)
