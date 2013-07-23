@@ -51,6 +51,8 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
      * "random" stab at where quality will be after the "improvement job". So we can sample
      * from the "improvement distribution" instead of doing anything snazzier with it.
      */
+    // TODO: This might be a faster way to implement this: (generating directly, not sampling)
+    // http://doodleproject.sourceforge.net/numerics/numerics4j/1.3/api/net/sf/doodleproject/numerics4j/random/BetaRandomVariable.html
     def predict: QualityDistribution =
         new QualityDistribution(particles map {improvementDistr(_).sample})
 
@@ -70,7 +72,7 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
 /* I am modelling all workers with just one worker-independent model */
 case class Workers(trueGX: Double)
 {
-    val learningRate = 0.05
+    val LEARNING_RATE = 0.05
     var estGX: Double = 1    // set to the mean of the true distribution
 
     // [DTC] (eq. 3)
@@ -88,14 +90,13 @@ case class Workers(trueGX: Double)
         val bigger  = if (trueBigger) trues.length  else falses.length
         val smaller = if (trueBigger) falses.length else trues.length
         val d = qstn.artifact_difficulty
-        estGX -= bigger * d * learningRate
-        estGX += smaller * (1 - d) * learningRate
+        estGX -= bigger * d * LEARNING_RATE
+        estGX += smaller * (1 - d) * LEARNING_RATE
     }
 
     // I checked and this function works properly
-    def prob_true_given_Qs(q: Double, qPrime: Double): Double = {
+    def prob_true_given_Qs(q: Double, qPrime: Double): Double =
         qstn.invertIfFalse(q < qPrime, accuracy(qstn.difficulty(q, qPrime)))
-    }
 }
 
 case class Question(trueAnswer: Boolean)
@@ -122,16 +123,14 @@ case class Question(trueAnswer: Boolean)
     def artifact_difficulty: Double = difficulty(qlty, qltyPrime)
 
     // [DTC] (eq. 2)
-    def difficulty(qlty: Double, qltyPrime: Double): Double = {
+    def difficulty(qlty: Double, qltyPrime: Double): Double =
         1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
-    }
 
-    // TODO: decide which of these to use
-    def artifact_utility: Double = {
+    def artifact_utility: Double =
         convolute_Utility_with_Particles(f_Q_of_q) + balance
-//        estimate_artifact_utility(f_Q_of_q.meanQltyEst) + balance
-    }
 
+    // TODO: Figure out what this does and decide:
+    // Should I normalize it AFTER generating the new array, not BEFORE?
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
         val norm = dist.particles.sum  // just compute it once
         (0.0 /: dist.particles)(_ + estimate_artifact_utility(_) / norm)
@@ -157,9 +156,8 @@ case class Question(trueAnswer: Boolean)
     // I had written that this is what the paper says to do,
     // Thinking it over again, it makes sense now too
     // [DTC] (top-right of page 4)
-    def utility_of_improvement_job: Double = {
+    def utility_of_improvement_job: Double =
         utility_of_stopping_voting - IMPROVEMENT_COST
-    }
 
     // [DTC] (eq. 9)
     def utility_of_stopping_voting: Double = { max(
@@ -200,18 +198,15 @@ case class Question(trueAnswer: Boolean)
      *   For each vote outcome \in { 0, 1 }
      *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
      */
-    def expVal_OLD_artifact_with_addnl_vote(probYes: Double): Double = {
+    def expVal_OLD_artifact_with_addnl_vote(probYes: Double): Double =
         expVal_after_a_vote(dist_Q_after_vote, probYes)
-    }
 
     // E[ U( Q' | b_{n} + 1 ) ]; the same thing as above
-    def expVal_NEW_artifact_with_addnl_vote(probYes: Double) = {
+    def expVal_NEW_artifact_with_addnl_vote(probYes: Double) =
         expVal_after_a_vote(dist_QPrime_after_vote, probYes)
-    }
 
-    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double = {
+    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double =
         expVal_given_dist(f(true), probYes) + expVal_given_dist(f(false), probYes)
-    }
 
     def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
         val norm = d.particles.sum
@@ -231,18 +226,17 @@ case class Question(trueAnswer: Boolean)
      *   multiply it against the convolution of f_{Q'|bn} with P(b|q,q')
      * to obtain f_{Q|(bn + 1)}
      */
-    def dist_Q_after_vote(vote: Boolean): QualityDistribution = {
+    def dist_Q_after_vote(vote: Boolean): QualityDistribution =
         dist_after_vote_helper(vote, f_Q_of_q.particles, f_Q_of_qPrime.particles)
-    }
 
     /* [DTC] (eq. 7-8) the same as above, but the order in
      *   which the distributions are used is switched
      */
-    def dist_QPrime_after_vote(vote: Boolean): QualityDistribution = {
+    def dist_QPrime_after_vote(vote: Boolean): QualityDistribution =
         dist_after_vote_helper(vote, f_Q_of_qPrime.particles, f_Q_of_q.particles)
-    }
 
     // [DTC] (eq. 6)
+    // TODO I now think that this is supposed to be RESAMPLING the particles
     def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
     QualityDistribution = {
         val normB = arrB.sum
@@ -292,18 +286,18 @@ case class Question(trueAnswer: Boolean)
     }
 
     def choose_action() {
-        val artifactUtility = artifact_utility
-        val voteUtility = utility_of_voting
+        val artifactUtility    = artifact_utility
+        val voteUtility        = utility_of_voting
         val improvementUtility = utility_of_improvement_job
 
-        println("artifactUtility: " + artifactUtility)
-        println("voteUtility: " + voteUtility)
+        println("artifactUtility: "    + artifactUtility)
+        println("voteUtility: "        + voteUtility)
         println("improvementUtility: " + improvementUtility)
-        println("meanQltyEst: " + qstn.f_Q_of_q.meanQltyEst)
-        println("PrimeMeanQltyEst: " + qstn.f_Q_of_qPrime.meanQltyEst)
+        println("meanQltyEst: "        + qstn.f_Q_of_q.meanQltyEst)
+        println("PrimeMeanQltyEst: "   + qstn.f_Q_of_qPrime.meanQltyEst)
 
         if (artifactUtility > voteUtility
-          && artifactUtility > improvementUtility) {
+         && artifactUtility > improvementUtility) {
             submit_final()
         }
         else if (voteUtility > improvementUtility) {
@@ -347,6 +341,4 @@ object FirstExperiment
     val qstn = Question(trueAnswer=true)
 }
 
-object TestStuff extends App {
-    while(true) FirstExperiment.qstn.choose_action()
-}
+object TestStuff extends App { while(true) FirstExperiment.qstn.choose_action() }
