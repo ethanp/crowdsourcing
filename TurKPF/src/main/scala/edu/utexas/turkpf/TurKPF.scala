@@ -10,6 +10,7 @@
 
 import math._
 import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
+import scala.util.Random
 
 /* this means one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
@@ -127,14 +128,10 @@ case class Question(trueAnswer: Boolean)
         1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
 
     def artifact_utility: Double =
-        convolute_Utility_with_Particles(f_Q_of_q) + balance
+        convolute_Utility_with_Particles(f_Q_of_q) // + balance
 
-    // TODO: Figure out what this does and decide:
-    // Should I normalize it AFTER generating the new array, not BEFORE?
-    def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
-        val norm = dist.particles.sum  // just compute it once
-        (0.0 /: dist.particles)(_ + estimate_artifact_utility(_) / norm)
-    }
+    def convolute_Utility_with_Particles(dist: QualityDistribution): Double =
+        (0.0 /: dist.particles)(_ + estimate_artifact_utility(_)) / NUM_PARTICLES
 
     // [DTC] (eq. 12)
     // this is O(numParticles^2)...they also note that this equation takes a while
@@ -235,22 +232,60 @@ case class Question(trueAnswer: Boolean)
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution =
         dist_after_vote_helper(vote, f_Q_of_qPrime.particles, f_Q_of_q.particles)
 
-    // [DTC] (eq. 6)
-    // TODO I now think that this is supposed to be RESAMPLING the particles
+
+    /* fold ALL the partBs through prob_true() with EACH partA
+     * [DTC] (eq. 5-6)
+     */
     def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
     QualityDistribution = {
-        val normB = arrB.sum
+        val rawWeights = arrA map { partA =>
+            (0.0 /: arrB)((sum, partB) =>
+                sum + wrkrs.prob_true_given_Qs(partA, partB) * partB)
+        }
+        val weightNorm = rawWeights.sum
+        val weights = rawWeights map {_/weightNorm} // normalize weights
         QualityDistribution(NUM_PARTICLES,
-            arrA map { partA =>
-                partA * (0.0 /: arrB)((sum, partB) => // [DTC] (eq. 6)
-                {
-                    val probTrue = wrkrs.prob_true_given_Qs(partA, partB)
-                    sum + partB * invertIfFalse(vote, probTrue) / normB
-                }
-                )  // I deleted normA from here after looking back at (eq. 5)
-            }      // and the voteUtility went up about 30x; was that right?
+            (1 to NUM_PARTICLES).toArray map {
+                a => random_sample_given_weights(weights, arrA)
+            }
         )
     }
+
+    /* algorithm for sampling from given set of points with associated weights:
+     * generate a random number in [0,1), use the cdf of the weights to use the
+     * random number to figure out what the sampled value is
+     *
+     * I debugged this function and it works as expected
+     */
+    def random_sample_given_weights(weights: Array[Double], particles: Array[Double]): Double = {
+        val rand = Random.nextDouble
+        var accrue = 0.0
+        for ((weight, index) <- weights.zipWithIndex) {
+            accrue += weight
+            if (rand < accrue)
+                return particles(index)
+        }
+        throw new RuntimeException // shouldn't ever get here
+        return particles(particles.length-1)
+    }
+
+
+//    // [DTC] (eq. 6)
+//    // TODO I now think that this is supposed to be RESAMPLING the particles
+//    def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
+//    QualityDistribution = {
+//        val normB = arrB.sum
+//        QualityDistribution(NUM_PARTICLES,
+//            arrA map { partA =>
+//                partA * (0.0 /: arrB)((sum, partB) => // [DTC] (eq. 6)
+//                {
+//                    val probTrue = wrkrs.prob_true_given_Qs(partA, partB)
+//                    sum + partB * invertIfFalse(vote, probTrue) / normB
+//                }
+//                )  // I deleted normA from here after looking back at (eq. 5)
+//            }      // and the voteUtility went up about 30x; was that right?
+//        )
+//    }
 
     def get_addnl_ballot_and_update_dists(): Boolean = {
         balance -= BALLOT_COST  // pay for it
@@ -290,6 +325,10 @@ case class Question(trueAnswer: Boolean)
         val voteUtility        = utility_of_voting
         val improvementUtility = utility_of_improvement_job
 
+        print("(")
+        qstn.f_Q_of_q.particles.foreach(printf("%.2f, ",_))
+        println(qstn.f_Q_of_q.particles.sum/NUM_PARTICLES + ")\n")
+
         println("artifactUtility: "    + artifactUtility)
         println("voteUtility: "        + voteUtility)
         println("improvementUtility: " + improvementUtility)
@@ -323,9 +362,8 @@ object FirstExperiment
     def INITIAL_QUALITY = .01 // new BetaDistribution(1,9).sample
 
     // [DTC] § Experimental Setup
-    def estimate_artifact_utility(qlty: Double): Double = {
+    def estimate_artifact_utility(qlty: Double): Double =
         1000 * (exp(qlty) - 1) / (exp(1) - 1)
-    }
 
     val IMPROVEMENT_COST    = .05
     val BALLOT_COST         = .01
