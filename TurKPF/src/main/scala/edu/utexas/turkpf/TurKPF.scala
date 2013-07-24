@@ -243,7 +243,7 @@ case class Question(trueAnswer: Boolean)
                 sum + wrkrs.prob_true_given_Qs(partA, partB) * partB)
         }
         val weightNorm = rawWeights.sum
-        val weights = rawWeights map {_/weightNorm} // normalize weights
+        val weights = rawWeights map {_/weightNorm} // normalize weights, works
         QualityDistribution(NUM_PARTICLES,
             (1 to NUM_PARTICLES).toArray map {
                 a => random_sample_given_weights(weights, arrA)
@@ -290,6 +290,7 @@ case class Question(trueAnswer: Boolean)
     def get_addnl_ballot_and_update_dists(): Boolean = {
         balance -= BALLOT_COST  // pay for it
         val vote: Boolean = wrkrs.generateVote(artifact_difficulty)
+        printf("vote :: %s #L293\n\n", vote.toString.map(_.toUpper))
         f_Q_of_q      = dist_Q_after_vote(vote)  // [DTC] (eqs. 4,5,6,7,8)
         f_Q_of_qPrime = dist_QPrime_after_vote(vote)
         votes ::= vote
