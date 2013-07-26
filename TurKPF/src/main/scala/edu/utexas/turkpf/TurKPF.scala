@@ -10,6 +10,7 @@
 
 import math._
 import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
+import scala.util.Random
 
 /* this means one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
@@ -56,12 +57,46 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
     def predict: QualityDistribution =
         new QualityDistribution(particles map {improvementDistr(_).sample})
 
+    /* fold ALL the partBs through prob_true() with EACH partA
+     * [DTC] (eq. 5-6)
+     */
+    def weight_and_sample(vote: Boolean, that: QualityDistribution):
+    QualityDistribution = {
 
-    // TODO
-    def re_estimate { ??? }
+        // get P( b_{n+1} | q ) :  [DTC] (eq. 6)
+        val rawWeights = this.particles map { partA =>
+            (0.0 /: that.particles)((sum, partB) =>
+                sum + qstn.prob_true_given_Qs(partA, partB))
+        }
 
-    // TODO
-    def sample { ??? }
+        // get f_{ Q | b_{n+1} } (q) :  [DTC] (eq. 5)
+        val weightNorm = rawWeights.sum
+        val weights = rawWeights map { _ / weightNorm } // normalize weights, works
+        QualityDistribution(NUM_PARTICLES,
+            (1 to NUM_PARTICLES).toArray map {
+                _ => random_sample_given_weights(weights)
+            }
+        )
+    }
+
+    /* algorithm for sampling from given set of points with associated weights:
+     * generate a random number in [0,1), use the CDF of the weights to use the
+     * random number to figure out what the sampled value is
+     *
+     * I debugged this function and it works as expected
+     */
+    def random_sample_given_weights(weights: Array[Double]): Double = {
+        val rand = Random.nextDouble
+        var accrue = 0.0
+        for ((weight, index) <- weights.zipWithIndex) {
+            accrue += weight
+            if (rand < accrue)
+                return this.particles(index)
+        }
+        throw new RuntimeException // shouldn't ever get here
+        return particles(particles.length-1)
+    }
+
 
     // avg loc of particles in associated Particle Filter
     // this doesn't actually make an appearance in the algorithm,
@@ -93,10 +128,6 @@ case class Workers(trueGX: Double)
         estGX -= bigger * d * LEARNING_RATE
         estGX += smaller * (1 - d) * LEARNING_RATE
     }
-
-    // I checked and this function works properly
-    def prob_true_given_Qs(q: Double, qPrime: Double): Double =
-        qstn.invertIfFalse(q < qPrime, accuracy(qstn.difficulty(q, qPrime)))
 }
 
 case class Question(trueAnswer: Boolean)
@@ -127,14 +158,11 @@ case class Question(trueAnswer: Boolean)
         1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
 
     def artifact_utility: Double =
-        convolute_Utility_with_Particles(f_Q_of_q) + balance
+        convolute_Utility_with_Particles(f_Q_of_q) // + balance
 
-    // TODO: Figure out what this does and decide:
-    // Should I normalize it AFTER generating the new array, not BEFORE?
-    def convolute_Utility_with_Particles(dist: QualityDistribution): Double = {
-        val norm = dist.particles.sum  // just compute it once
-        (0.0 /: dist.particles)(_ + estimate_artifact_utility(_) / norm)
-    }
+    // the math for this checks out
+    def convolute_Utility_with_Particles(dist: QualityDistribution): Double =
+        (0.0 /: dist.particles)(_ + estimate_artifact_utility(_)) / NUM_PARTICLES
 
     // [DTC] (eq. 12)
     // this is O(numParticles^2)...they also note that this equation takes a while
@@ -157,7 +185,7 @@ case class Question(trueAnswer: Boolean)
     // Thinking it over again, it makes sense now too
     // [DTC] (top-right of page 4)
     def utility_of_improvement_job: Double =
-        utility_of_stopping_voting - IMPROVEMENT_COST
+        utility_of_stopping_voting - IMPROVEMENT_COST * UTILITY_OF_$$$
 
     // [DTC] (eq. 9)
     def utility_of_stopping_voting: Double = { max(
@@ -173,7 +201,7 @@ case class Question(trueAnswer: Boolean)
         max(
             expVal_OLD_artifact_with_addnl_vote(probYes),
             expVal_NEW_artifact_with_addnl_vote(probYes)
-        ) - BALLOT_COST
+        ) - BALLOT_COST * UTILITY_OF_$$$
     }
 
     // [DTC] (bottom-left Pg. 4)
@@ -187,10 +215,16 @@ case class Question(trueAnswer: Boolean)
     def probability_of_yes_vote = {
         (0.0 /: f_Q_of_q.particles)((sumA, particleA) =>
             sumA + particleA * (0.0 /: f_Q_of_qPrime.particles)((sumB, particleB) =>
-                sumB + wrkrs.prob_true_given_Qs(particleA, particleB) * particleB
+
+                // TODO check that multiplying particleB in makes sense
+                sumB + prob_true_given_Qs(particleA, particleB) * particleB
             ) / f_Q_of_qPrime.particles.sum
         ) / f_Q_of_q.particles.sum
     }
+
+    // I checked and this function works properly
+    def prob_true_given_Qs(q: Double, qPrime: Double): Double =
+        qstn.invertIfFalse(q < qPrime, wrkrs.accuracy(qstn.difficulty(q, qPrime)))
 
     /* [DTC] (bottom-left Pg. 4)
      * PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
@@ -205,59 +239,54 @@ case class Question(trueAnswer: Boolean)
     def expVal_NEW_artifact_with_addnl_vote(probYes: Double) =
         expVal_after_a_vote(dist_QPrime_after_vote, probYes)
 
-    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double =
-        expVal_given_dist(f(true), probYes) + expVal_given_dist(f(false), probYes)
-
-    def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
-        val norm = d.particles.sum
-        (0.0 /: d.particles)((sum, particle) =>
-            sum + particle * probYes * estimate_artifact_utility(particle)
-        ) / norm
+    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double = {
+        if (probYes > 1 || probYes < 0) throw new RuntimeException
+        convolute_Utility_with_Particles(f(true)) * probYes +
+        convolute_Utility_with_Particles(f(false)) * (1 - probYes)
     }
+
 
     // [DTC] (eq. 5)
     /* What this Does:
      * Creates a posterior distribution (estimate) of the quality of the artifact
      *  given one more ballot
-     *
-     * PSEUDOCODE:
-     * Create a new Particle_Filter-based distribution from the old one
-     * For each particle in f_{Q|bn},
-     *   multiply it against the convolution of f_{Q'|bn} with P(b|q,q')
-     * to obtain f_{Q|(bn + 1)}
      */
     def dist_Q_after_vote(vote: Boolean): QualityDistribution =
-        dist_after_vote_helper(vote, f_Q_of_q.particles, f_Q_of_qPrime.particles)
+        f_Q_of_q.weight_and_sample(vote, f_Q_of_qPrime)
 
     /* [DTC] (eq. 7-8) the same as above, but the order in
      *   which the distributions are used is switched
      */
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution =
-        dist_after_vote_helper(vote, f_Q_of_qPrime.particles, f_Q_of_q.particles)
+        f_Q_of_qPrime.weight_and_sample(vote, f_Q_of_q)
 
-    // [DTC] (eq. 6)
-    // TODO I now think that this is supposed to be RESAMPLING the particles
-    def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
-    QualityDistribution = {
-        val normB = arrB.sum
-        QualityDistribution(NUM_PARTICLES,
-            arrA map { partA =>
-                partA * (0.0 /: arrB)((sum, partB) => // [DTC] (eq. 6)
-                {
-                    val probTrue = wrkrs.prob_true_given_Qs(partA, partB)
-                    sum + partB * invertIfFalse(vote, probTrue) / normB
-                }
-                )  // I deleted normA from here after looking back at (eq. 5)
-            }      // and the voteUtility went up about 30x; was that right?
-        )
-    }
+//    // [DTC] (eq. 6)
+//    // NOTE: I now think that this is supposed to be RESAMPLING the particles
+//    def weight_and_sample(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
+//    QualityDistribution = {
+//        val normB = arrB.sum
+//        QualityDistribution(NUM_PARTICLES,
+//            arrA map { partA =>
+//                partA * (0.0 /: arrB)((sum, partB) => // [DTC] (eq. 6)
+//                {
+//                    val probTrue = wrkrs.prob_true_given_Qs(partA, partB)
+//                    sum + partB * invertIfFalse(vote, probTrue) / normB
+//                }
+//                )  // I deleted normA from here after looking back at (eq. 5)
+//            }      // and the voteUtility went up about 30x; was that right?
+//        )
+//    }
 
     def get_addnl_ballot_and_update_dists(): Boolean = {
         balance -= BALLOT_COST  // pay for it
         val vote: Boolean = wrkrs.generateVote(artifact_difficulty)
+        printf("vote :: %s #L293\n\n", vote.toString.map(_.toUpper))
         f_Q_of_q      = dist_Q_after_vote(vote)  // [DTC] (eqs. 4,5,6,7,8)
         f_Q_of_qPrime = dist_QPrime_after_vote(vote)
         votes ::= vote
+        print("(")
+        votes.foreach(printf("%b, ",_))
+        println(")\n")
         vote
     }
 
@@ -290,24 +319,31 @@ case class Question(trueAnswer: Boolean)
         val voteUtility        = utility_of_voting
         val improvementUtility = utility_of_improvement_job
 
+        println("current balance: " + balance)
+        print("(")
+        qstn.f_Q_of_q.particles.foreach(printf("%.2f, ",_))
+        println(qstn.f_Q_of_q.particles.sum/NUM_PARTICLES + ")\n")
+
         println("artifactUtility: "    + artifactUtility)
         println("voteUtility: "        + voteUtility)
         println("improvementUtility: " + improvementUtility)
         println("meanQltyEst: "        + qstn.f_Q_of_q.meanQltyEst)
         println("PrimeMeanQltyEst: "   + qstn.f_Q_of_qPrime.meanQltyEst)
 
-        if (artifactUtility > voteUtility
-         && artifactUtility > improvementUtility) {
-            submit_final()
-        }
-        else if (voteUtility > improvementUtility) {
-            println("ballot job\n")
-            get_addnl_ballot_and_update_dists()
-        }
-        else {
+        if (improvementUtility > voteUtility
+        && improvementUtility > artifactUtility
+        && balance > IMPROVEMENT_COST)
+        {
             println("improvement job\n")
             improvement_job()
         }
+        else if (voteUtility > artifactUtility
+                && balance > BALLOT_COST)
+        {
+            println("ballot job\n")
+            get_addnl_ballot_and_update_dists()
+        }
+        else submit_final()
     }
 }
 
@@ -323,18 +359,17 @@ object FirstExperiment
     def INITIAL_QUALITY = .01 // new BetaDistribution(1,9).sample
 
     // [DTC] § Experimental Setup
-    def estimate_artifact_utility(qlty: Double): Double = {
+    def estimate_artifact_utility(qlty: Double): Double =
         1000 * (exp(qlty) - 1) / (exp(1) - 1)
-    }
 
     val IMPROVEMENT_COST    = .05
     val BALLOT_COST         = .01
     val DIFFICULTY_CONSTANT = 0.5
     val LOOKAHEAD_DEPTH     = 3  // not using this at this point
     val NUM_QUESTIONS       = 10000
-    val INITIAL_ALLOWANCE   = 400.0
+    val INITIAL_ALLOWANCE   = 10.0
     val NUM_PARTICLES       = 100
-//    val UTILITY_OF_$$$      = .005  // let's just say it's "1" for simplicity
+    val UTILITY_OF_$$$      = .05  // let's just say it's "1" for simplicity
 
     /* so that MANY Questions can be run Per Experiment
      * I'ma try to get just one Question working first though */
