@@ -57,6 +57,47 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
     def predict: QualityDistribution =
         new QualityDistribution(particles map {improvementDistr(_).sample})
 
+    /* fold ALL the partBs through prob_true() with EACH partA
+     * [DTC] (eq. 5-6)
+     */
+    def weight_and_sample(vote: Boolean, that: QualityDistribution):
+    QualityDistribution = {
+
+        // get P( b_{n+1} | q ) :  [DTC] (eq. 6)
+        val rawWeights = this.particles map { partA =>
+            (0.0 /: that.particles)((sum, partB) =>
+                sum + qstn.prob_true_given_Qs(partA, partB))
+        }
+
+        // get f_{ Q | b_{n+1} } (q) :  [DTC] (eq. 5)
+        val weightNorm = rawWeights.sum
+        val weights = rawWeights map { _ / weightNorm } // normalize weights, works
+        QualityDistribution(NUM_PARTICLES,
+            (1 to NUM_PARTICLES).toArray map {
+                _ => random_sample_given_weights(weights)
+            }
+        )
+    }
+
+    /* algorithm for sampling from given set of points with associated weights:
+     * generate a random number in [0,1), use the CDF of the weights to use the
+     * random number to figure out what the sampled value is
+     *
+     * I debugged this function and it works as expected
+     */
+    def random_sample_given_weights(weights: Array[Double]): Double = {
+        val rand = Random.nextDouble
+        var accrue = 0.0
+        for ((weight, index) <- weights.zipWithIndex) {
+            accrue += weight
+            if (rand < accrue)
+                return this.particles(index)
+        }
+        throw new RuntimeException // shouldn't ever get here
+        return particles(particles.length-1)
+    }
+
+
     // avg loc of particles in associated Particle Filter
     // this doesn't actually make an appearance in the algorithm,
     // it's just for debugging
@@ -174,6 +215,8 @@ case class Question(trueAnswer: Boolean)
     def probability_of_yes_vote = {
         (0.0 /: f_Q_of_q.particles)((sumA, particleA) =>
             sumA + particleA * (0.0 /: f_Q_of_qPrime.particles)((sumB, particleB) =>
+
+                // TODO check that multiplying particleB in makes sense
                 sumB + prob_true_given_Qs(particleA, particleB) * particleB
             ) / f_Q_of_qPrime.particles.sum
         ) / f_Q_of_q.particles.sum
@@ -196,74 +239,30 @@ case class Question(trueAnswer: Boolean)
     def expVal_NEW_artifact_with_addnl_vote(probYes: Double) =
         expVal_after_a_vote(dist_QPrime_after_vote, probYes)
 
-    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double =
+    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double = {
+        if (probYes > 1 || probYes < 0) throw new RuntimeException
         convolute_Utility_with_Particles(f(true)) * probYes +
         convolute_Utility_with_Particles(f(false)) * (1 - probYes)
+    }
 
 
     // [DTC] (eq. 5)
     /* What this Does:
      * Creates a posterior distribution (estimate) of the quality of the artifact
      *  given one more ballot
-     *
-     * PSEUDOCODE:
-     * Create a new Particle_Filter-based distribution from the old one
-     * For each particle in f_{Q|bn},
-     *   multiply it against the convolution of f_{Q'|bn} with P(b|q,q')
-     * to obtain f_{Q|(bn + 1)}
      */
     def dist_Q_after_vote(vote: Boolean): QualityDistribution =
-        dist_after_vote_helper(vote, f_Q_of_q.particles, f_Q_of_qPrime.particles)
+        f_Q_of_q.weight_and_sample(vote, f_Q_of_qPrime)
 
     /* [DTC] (eq. 7-8) the same as above, but the order in
      *   which the distributions are used is switched
      */
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution =
-        dist_after_vote_helper(vote, f_Q_of_qPrime.particles, f_Q_of_q.particles)
-
-
-    /* fold ALL the partBs through prob_true() with EACH partA
-     * [DTC] (eq. 5-6)
-     */
-    def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
-    QualityDistribution = {
-
-        // get P( b_{n+1} | q ) :  [DTC] (eq. 6)
-        val rawWeights = arrA map { partA =>
-            (0.0 /: arrB)((sum, partB) =>
-                sum + prob_true_given_Qs(partA, partB))
-        }
-        val weightNorm = rawWeights.sum
-        val weights = rawWeights map { _ / weightNorm } // normalize weights, works
-        QualityDistribution(NUM_PARTICLES,
-            (1 to NUM_PARTICLES).toArray map {
-                a => random_sample_given_weights(weights, arrA)
-            }
-        )
-    }
-
-    /* algorithm for sampling from given set of points with associated weights:
-     * generate a random number in [0,1), use the CDF of the weights to use the
-     * random number to figure out what the sampled value is
-     *
-     * I debugged this function and it works as expected
-     */
-    def random_sample_given_weights(weights: Array[Double], particles: Array[Double]): Double = {
-        val rand = Random.nextDouble
-        var accrue = 0.0
-        for ((weight, index) <- weights.zipWithIndex) {
-            accrue += weight
-            if (rand < accrue)
-                return particles(index)
-        }
-        throw new RuntimeException // shouldn't ever get here
-        return particles(particles.length-1)
-    }
-
+        f_Q_of_qPrime.weight_and_sample(vote, f_Q_of_q)
 
 //    // [DTC] (eq. 6)
 //    // NOTE: I now think that this is supposed to be RESAMPLING the particles
-//    def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
+//    def weight_and_sample(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
 //    QualityDistribution = {
 //        val normB = arrB.sum
 //        QualityDistribution(NUM_PARTICLES,
