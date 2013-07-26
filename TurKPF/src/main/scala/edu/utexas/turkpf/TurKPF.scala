@@ -228,11 +228,10 @@ case class Question(trueAnswer: Boolean)
     def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
     QualityDistribution = {
 
-        val bSum = arrB.sum
         // get P( b_{n+1} | q ) :  [DTC] (eq. 6)
         val rawWeights = arrA map { partA =>
             (0.0 /: arrB)((sum, partB) =>
-                sum + prob_true_given_Qs(partA, partB) * partB / bSum)
+                sum + prob_true_given_Qs(partA, partB))
         }
         val weightNorm = rawWeights.sum
         val weights = rawWeights map { _ / weightNorm } // normalize weights, works
