@@ -57,13 +57,6 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
     def predict: QualityDistribution =
         new QualityDistribution(particles map {improvementDistr(_).sample})
 
-
-    // TODO
-    def re_estimate { ??? }
-
-    // TODO
-    def sample { ??? }
-
     // avg loc of particles in associated Particle Filter
     // this doesn't actually make an appearance in the algorithm,
     // it's just for debugging
@@ -94,10 +87,6 @@ case class Workers(trueGX: Double)
         estGX -= bigger * d * LEARNING_RATE
         estGX += smaller * (1 - d) * LEARNING_RATE
     }
-
-    // I checked and this function works properly
-    def prob_true_given_Qs(q: Double, qPrime: Double): Double =
-        qstn.invertIfFalse(q < qPrime, accuracy(qstn.difficulty(q, qPrime)))
 }
 
 case class Question(trueAnswer: Boolean)
@@ -130,6 +119,7 @@ case class Question(trueAnswer: Boolean)
     def artifact_utility: Double =
         convolute_Utility_with_Particles(f_Q_of_q) // + balance
 
+    // the math for this checks out
     def convolute_Utility_with_Particles(dist: QualityDistribution): Double =
         (0.0 /: dist.particles)(_ + estimate_artifact_utility(_)) / NUM_PARTICLES
 
@@ -154,7 +144,7 @@ case class Question(trueAnswer: Boolean)
     // Thinking it over again, it makes sense now too
     // [DTC] (top-right of page 4)
     def utility_of_improvement_job: Double =
-        utility_of_stopping_voting - IMPROVEMENT_COST
+        utility_of_stopping_voting - IMPROVEMENT_COST * UTILITY_OF_$$$
 
     // [DTC] (eq. 9)
     def utility_of_stopping_voting: Double = { max(
@@ -170,7 +160,7 @@ case class Question(trueAnswer: Boolean)
         max(
             expVal_OLD_artifact_with_addnl_vote(probYes),
             expVal_NEW_artifact_with_addnl_vote(probYes)
-        ) - BALLOT_COST
+        ) - BALLOT_COST * UTILITY_OF_$$$
     }
 
     // [DTC] (bottom-left Pg. 4)
@@ -184,10 +174,14 @@ case class Question(trueAnswer: Boolean)
     def probability_of_yes_vote = {
         (0.0 /: f_Q_of_q.particles)((sumA, particleA) =>
             sumA + particleA * (0.0 /: f_Q_of_qPrime.particles)((sumB, particleB) =>
-                sumB + wrkrs.prob_true_given_Qs(particleA, particleB) * particleB
+                sumB + prob_true_given_Qs(particleA, particleB) * particleB
             ) / f_Q_of_qPrime.particles.sum
         ) / f_Q_of_q.particles.sum
     }
+
+    // I checked and this function works properly
+    def prob_true_given_Qs(q: Double, qPrime: Double): Double =
+        qstn.invertIfFalse(q < qPrime, wrkrs.accuracy(qstn.difficulty(q, qPrime)))
 
     /* [DTC] (bottom-left Pg. 4)
      * PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
@@ -203,14 +197,9 @@ case class Question(trueAnswer: Boolean)
         expVal_after_a_vote(dist_QPrime_after_vote, probYes)
 
     def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double =
-        expVal_given_dist(f(true), probYes) + expVal_given_dist(f(false), probYes) / 2
+        convolute_Utility_with_Particles(f(true)) * probYes +
+        convolute_Utility_with_Particles(f(false)) * (1 - probYes)
 
-    def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
-        val norm = d.particles.sum
-        (0.0 /: d.particles)((sum, particle) =>
-            sum + particle * probYes * estimate_artifact_utility(particle)
-        ) / norm
-    }
 
     // [DTC] (eq. 5)
     /* What this Does:
@@ -240,10 +229,10 @@ case class Question(trueAnswer: Boolean)
     QualityDistribution = {
 
         val bSum = arrB.sum
-        // get P( b_{n+1} | q )
+        // get P( b_{n+1} | q ) :  [DTC] (eq. 6)
         val rawWeights = arrA map { partA =>
             (0.0 /: arrB)((sum, partB) =>
-                sum + wrkrs.prob_true_given_Qs(partA, partB) * partB / bSum)
+                sum + prob_true_given_Qs(partA, partB) * partB / bSum)
         }
         val weightNorm = rawWeights.sum
         val weights = rawWeights map { _ / weightNorm } // normalize weights, works
@@ -255,7 +244,7 @@ case class Question(trueAnswer: Boolean)
     }
 
     /* algorithm for sampling from given set of points with associated weights:
-     * generate a random number in [0,1), use the cdf of the weights to use the
+     * generate a random number in [0,1), use the CDF of the weights to use the
      * random number to figure out what the sampled value is
      *
      * I debugged this function and it works as expected
@@ -382,7 +371,7 @@ object FirstExperiment
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 10.0
     val NUM_PARTICLES       = 100
-//    val UTILITY_OF_$$$      = .005  // let's just say it's "1" for simplicity
+    val UTILITY_OF_$$$      = .05  // let's just say it's "1" for simplicity
 
     /* so that MANY Questions can be run Per Experiment
      * I'ma try to get just one Question working first though */
