@@ -66,7 +66,7 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
         // get P( b_{n+1} | q ) :  [DTC] (eq. 6)
         val rawWeights = this.particles map { partA =>
             (0.0 /: that.particles)((sum, partB) =>
-                sum + qstn.prob_true_given_Qs(partA, partB))
+                sum + qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(partA, partB)))
         }
 
         // get f_{ Q | b_{n+1} } (q) :  [DTC] (eq. 5)
