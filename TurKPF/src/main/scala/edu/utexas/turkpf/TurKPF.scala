@@ -203,7 +203,7 @@ case class Question(trueAnswer: Boolean)
         expVal_after_a_vote(dist_QPrime_after_vote, probYes)
 
     def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double =
-        expVal_given_dist(f(true), probYes) + expVal_given_dist(f(false), probYes)
+        expVal_given_dist(f(true), probYes) + expVal_given_dist(f(false), probYes) / 2
 
     def expVal_given_dist(d: QualityDistribution, probYes: Double): Double = {
         val norm = d.particles.sum
@@ -238,12 +238,15 @@ case class Question(trueAnswer: Boolean)
      */
     def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
     QualityDistribution = {
+
+        val bSum = arrB.sum
+        // get P( b_{n+1} | q )
         val rawWeights = arrA map { partA =>
             (0.0 /: arrB)((sum, partB) =>
-                sum + wrkrs.prob_true_given_Qs(partA, partB) * partB)
+                sum + wrkrs.prob_true_given_Qs(partA, partB) * partB / bSum)
         }
         val weightNorm = rawWeights.sum
-        val weights = rawWeights map {_/weightNorm} // normalize weights, works
+        val weights = rawWeights map { _ / weightNorm } // normalize weights, works
         QualityDistribution(NUM_PARTICLES,
             (1 to NUM_PARTICLES).toArray map {
                 a => random_sample_given_weights(weights, arrA)
@@ -271,7 +274,7 @@ case class Question(trueAnswer: Boolean)
 
 
 //    // [DTC] (eq. 6)
-//    // TODO I now think that this is supposed to be RESAMPLING the particles
+//    // NOTE: I now think that this is supposed to be RESAMPLING the particles
 //    def dist_after_vote_helper(vote: Boolean, arrA: Array[Double], arrB: Array[Double]):
 //    QualityDistribution = {
 //        val normB = arrB.sum
@@ -294,6 +297,9 @@ case class Question(trueAnswer: Boolean)
         f_Q_of_q      = dist_Q_after_vote(vote)  // [DTC] (eqs. 4,5,6,7,8)
         f_Q_of_qPrime = dist_QPrime_after_vote(vote)
         votes ::= vote
+        print("(")
+        votes.foreach(printf("%b, ",_))
+        println(")\n")
         vote
     }
 
@@ -326,6 +332,7 @@ case class Question(trueAnswer: Boolean)
         val voteUtility        = utility_of_voting
         val improvementUtility = utility_of_improvement_job
 
+        println("current balance: " + balance)
         print("(")
         qstn.f_Q_of_q.particles.foreach(printf("%.2f, ",_))
         println(qstn.f_Q_of_q.particles.sum/NUM_PARTICLES + ")\n")
@@ -336,18 +343,20 @@ case class Question(trueAnswer: Boolean)
         println("meanQltyEst: "        + qstn.f_Q_of_q.meanQltyEst)
         println("PrimeMeanQltyEst: "   + qstn.f_Q_of_qPrime.meanQltyEst)
 
-        if (artifactUtility > voteUtility
-         && artifactUtility > improvementUtility) {
-            submit_final()
-        }
-        else if (voteUtility > improvementUtility) {
-            println("ballot job\n")
-            get_addnl_ballot_and_update_dists()
-        }
-        else {
+        if (improvementUtility > voteUtility
+        && improvementUtility > artifactUtility
+        && balance > IMPROVEMENT_COST)
+        {
             println("improvement job\n")
             improvement_job()
         }
+        else if (voteUtility > artifactUtility
+                && balance > BALLOT_COST)
+        {
+            println("ballot job\n")
+            get_addnl_ballot_and_update_dists()
+        }
+        else submit_final()
     }
 }
 
@@ -371,7 +380,7 @@ object FirstExperiment
     val DIFFICULTY_CONSTANT = 0.5
     val LOOKAHEAD_DEPTH     = 3  // not using this at this point
     val NUM_QUESTIONS       = 10000
-    val INITIAL_ALLOWANCE   = 400.0
+    val INITIAL_ALLOWANCE   = 10.0
     val NUM_PARTICLES       = 100
 //    val UTILITY_OF_$$$      = .005  // let's just say it's "1" for simplicity
 
