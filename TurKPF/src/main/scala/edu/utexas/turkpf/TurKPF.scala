@@ -52,9 +52,7 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
     def predict: QualityDistribution =
         new QualityDistribution(particles map {improvementDistr(_).sample})
 
-    /* fold ALL the partBs through prob_true() with EACH partA
-     * [DTC] (eq. 5-6)
-     */
+    /* fold ALL the partBs through prob_true() with EACH partA :  [DTC] (eq. 5-6) */
     def weight_and_sample(vote: Boolean, that: QualityDistribution):
     QualityDistribution = {
 
@@ -63,16 +61,32 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
             this.particles map { partA =>
                 (0.0 /: that.particles)((sum, partB) => sum +
                     qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(partA, partB)) / NUM_PARTICLES)
-            } // TODO prob_true() here is WRONG because it needs to be q THEN qPrime
-              // and can't handle being backwards
+            }
 
         // get f_{ Q | b_{n+1} } (q) :  [DTC] (eq. 5)
         val weightNorm = rawWeights.sum
         val weights = rawWeights map { _ / weightNorm } // normalize weights, works
         new QualityDistribution(
-            this.particles.map(_ => random_sample_given_weights(weights))
-        )
+            this.particles.map(_ => random_sample_given_weights(weights)))
     }
+
+    def weight_and_sample_PRIME(vote: Boolean, that: QualityDistribution):
+    QualityDistribution = {
+
+        // get P( b_{n+1} | q ) :  [DTC] (eq. 6) ; [TK=>PF] (eq. 8-9)
+        val rawWeights =
+            this.particles map { partA =>
+                (0.0 /: that.particles)((sum, partB) => sum +
+                  qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(partB, partA)) / NUM_PARTICLES)
+            }
+
+        // get f_{ Q | b_{n+1} } (q) :  [DTC] (eq. 5)
+        val weightNorm = rawWeights.sum
+        val weights = rawWeights map { _ / weightNorm } // normalize weights, works
+        new QualityDistribution(
+            this.particles.map(_ => random_sample_given_weights(weights)))
+    }
+
 
     /* algorithm for sampling from given set of points with associated weights:
      * generate a random number in [0,1), use the CDF of the weights to use the
@@ -242,7 +256,7 @@ case class Question(trueAnswer: Boolean)
      *   which the distributions are used is switched
      */
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution =
-        f_Q_of_qPrime.weight_and_sample(vote, f_Q_of_q)
+        f_Q_of_qPrime.weight_and_sample_PRIME(vote, f_Q_of_q)
 
     def get_addnl_ballot_and_update_dists(): Boolean = {
         balance -= BALLOT_COST  // pay for it
@@ -341,42 +355,101 @@ object FirstExperiment
 
 object TestStuff extends App { while(true) FirstExperiment.qstn.choose_action() }
 
-// TODO Judging by this output it seems like I got the effect of a vote job wrong
-/*
+/*  
 
-********************************************
-STEP 1:
-
-probYes: 0.515
-
-meanQltyEst:        0.4589
-PrimeMeanQltyEst:   0.4821
+probYes: 0.591326163461356
+Original Utility:   60.198717589233404
+Prime Utility:      125.42590999282382
 
 => | IMPROVEMENT job |
 
-********************************************
-STEP 2:
 
-probYes: 0.500
+****************************************************
+probYes: 0.6474481674821223
+Original Utility:   125.42590999282382
+Prime Utility:      257.28149423011234
 
-meanQltyEst:        0.4821
-PrimeMeanQltyEst:   0.4810
+=> | BALLOT job |
+vote :: TRUE #L293
 
-=> | BALLOT job | => TRUE => (true)
+(true)
 
-********************************************
-STEP 3:
 
-probYes: 0.498
+****************************************************
+probYes: 0.6780265037898812
+Original Utility:   114.33276913138187
+Prime Utility:      275.7916197003925
 
-meanQltyEst:        0.4315
-PrimeMeanQltyEst:   0.4273
+=> | IMPROVEMENT job |
 
-=> | SUBMIT |
+
+****************************************************
+probYes: 0.5685706498067223
+Original Utility:   275.7916197003925
+Prime Utility:      335.49571157723636
+
+=> | BALLOT job |
+vote :: TRUE #L293
+
+(true)
+
+
+****************************************************
+probYes: 0.6259862345963378
+Original Utility:   243.81428684382155
+Prime Utility:      367.6775365424834
+
+=> | IMPROVEMENT job |
+
+
+****************************************************
+probYes: 0.524473504313434
+Original Utility:   367.6775365424834
+Prime Utility:      387.81869705242127
+
+=> | IMPROVEMENT job |
+
+
+****************************************************
+probYes: 0.513555625706127
+Original Utility:   387.81869705242127
+Prime Utility:      396.48754085532755
+
+=> | IMPROVEMENT job |
+
+
+****************************************************
+probYes: 0.5085136955151971
+Original Utility:   396.48754085532755
+Prime Utility:      408.69587479017486
+
+=> | IMPROVEMENT job |
+
+
+****************************************************
+probYes: 0.4995227015925214
+Original Utility:   408.69587479017486
+Prime Utility:      408.7577671510072
+
+=> | BALLOT job |
+vote :: TRUE #L293
+
+(true)
+
+
+****************************************************
+probYes: 0.5815876581915144
+Original Utility:   360.54761964684974
+Prime Utility:      455.08289854640566
+
+=> | IMPROVEMENT job |
+
+
+****************************************************
+probYes: 0.48185094093858255
+Original Utility:   455.08289854640566
+Prime Utility:      432.43685202869693
+Final Utility: 455.08289854640566
 
 Process finished with exit code 0
-
-
-The most obvious of the apparent problems here is that
-
 */
