@@ -18,6 +18,18 @@ import FirstExperiment._
 
 /* TODO: the LookAhead */
 
+// add "normalize" to Array[Dbl] to make ||Array|| = 1
+abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
+object apples {
+    implicit def addNorm(a: Array[Double]): addNorm = new addNorm(a) {
+        def normalize = {
+            val norm = a.sum
+            a.map(_/norm)
+        }
+    }
+}
+import apples._
+
 /* Particle Filter representation of artifact quality probability density functions */
 case class QualityDistribution(numParticles: Int, particles: Array[Double])
 {
@@ -57,18 +69,16 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
     QualityDistribution = {
 
         // get P( b_{n+1} | q ) :  [DTC] (eq. 6) ; [TK=>PF] (eq. 8-9)
-        val rawWeights =
-            this.particles map { partA =>
-                (0.0 /: that.particles)((sum, partB) => {
-                    val inTup = if (prime) (partB, partA) else (partA, partB)
-                    sum + qstn.invertIfFalse(vote,
-                        qstn.prob_true_given_Qs(inTup._1, inTup._2)) / NUM_PARTICLES
-                })
-            }
+        val weights = {
+            this.particles map {
+                partA =>
+                    (0.0 /: that.particles)((sum, partB) => {
+                        val inTup = if (prime) (partB, partA) else (partA, partB)
+                        sum + qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(inTup._1, inTup._2))
+                    })
+            }}.normalize
 
         // get f_{ Q | b_{n+1} } (q) :  [DTC] (eq. 5)
-        val weightNorm = rawWeights.sum
-        val weights = rawWeights map { _ / weightNorm } // normalize weights, works
         new QualityDistribution(
             this.particles.map(_ => random_sample_given_weights(weights)))
     }
