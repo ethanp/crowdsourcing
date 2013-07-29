@@ -17,7 +17,6 @@ import scala.util.Random
 import FirstExperiment._
 
 /* TODO: the LookAhead */
-/* TODO: it shouldn't let you spend more than your allowance */
 
 /* Particle Filter representation of artifact quality probability density functions */
 case class QualityDistribution(numParticles: Int, particles: Array[Double])
@@ -59,19 +58,19 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
     def weight_and_sample(vote: Boolean, that: QualityDistribution):
     QualityDistribution = {
 
-        // get P( b_{n+1} | q ) :  [DTC] (eq. 6)
-        val rawWeights = this.particles map { partA =>
-            (0.0 /: that.particles)((sum, partB) =>
-                sum + qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(partA, partB)))
-        }
+        // get P( b_{n+1} | q ) :  [DTC] (eq. 6) ; [TK=>PF] (eq. 8-9)
+        val rawWeights =
+            this.particles map { partA =>
+                (0.0 /: that.particles)((sum, partB) => sum +
+                    qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(partA, partB)) / NUM_PARTICLES)
+            } // TODO prob_true() here is WRONG because it needs to be q THEN qPrime
+              // and can't handle being backwards
 
         // get f_{ Q | b_{n+1} } (q) :  [DTC] (eq. 5)
         val weightNorm = rawWeights.sum
         val weights = rawWeights map { _ / weightNorm } // normalize weights, works
-        QualityDistribution(NUM_PARTICLES,
-            (1 to NUM_PARTICLES).toArray map {
-                _ => random_sample_given_weights(weights)
-            }
+        new QualityDistribution(
+            this.particles.map(_ => random_sample_given_weights(weights))
         )
     }
 
@@ -87,16 +86,11 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
         for ((weight, index) <- weights.zipWithIndex) {
             accrue += weight
             if (rand < accrue)
-                return this.particles(index)
+                return particles(index)
         }
         throw new RuntimeException // shouldn't ever get here
         particles(particles.length-1)
     }
-
-    // avg loc of particles in associated Particle Filter
-    // this doesn't actually make an appearance in the algorithm,
-    // it's just for debugging
-    def meanQltyEst: Double = particles.sum / NUM_PARTICLES
 }
 
 /* model all workers with just one worker-independent model */
@@ -241,10 +235,6 @@ case class Question(trueAnswer: Boolean)
     }
 
     // [DTC] (eq. 5)
-    /* What this Does:
-     * Creates a posterior distribution (estimate) of the quality of the artifact
-     *  given one more ballot
-     */
     def dist_Q_after_vote(vote: Boolean): QualityDistribution =
         f_Q_of_q.weight_and_sample(vote, f_Q_of_qPrime)
 
@@ -257,7 +247,7 @@ case class Question(trueAnswer: Boolean)
     def get_addnl_ballot_and_update_dists(): Boolean = {
         balance -= BALLOT_COST  // pay for it
         val vote: Boolean = wrkrs.generateVote(artifact_difficulty)
-        printf("vote :: %s #L293\n\n", vote.toString.map(_.toUpper))
+        printf("vote :: %s #L293\n\n", vote.toString.toUpperCase)
         f_Q_of_q      = dist_Q_after_vote(vote)  // [DTC] (eqs. 4,5,6,7,8)
         f_Q_of_qPrime = dist_QPrime_after_vote(vote)
         votes ::= vote
@@ -294,12 +284,12 @@ case class Question(trueAnswer: Boolean)
         val improvementUtility = utility_of_improvement_job
 
 //        println("\nParticles:\n(" + qstn.f_Q_of_q.particles.mkString(", ") + ")\n")
-        println("current balance     " + balance)
-        println("artifactUtility:    " + artifactUtility)
-        println("voteUtility:        " + voteUtility)
-        println("improvementUtility: " + improvementUtility)
-        println("meanQltyEst:        " + qstn.f_Q_of_q.meanQltyEst)
-        println("PrimeMeanQltyEst:   " + qstn.f_Q_of_qPrime.meanQltyEst)
+//        println("current balance     " + balance)
+//        println("artifactUtility:    " + artifactUtility)
+//        println("voteUtility:        " + voteUtility)
+//        println("improvementUtility: " + improvementUtility)
+        println("Original Utility:   " + convolute_Utility_with_Particles(qstn.f_Q_of_q))
+        println("Prime Utility:      " + convolute_Utility_with_Particles(qstn.f_Q_of_qPrime))
 
         if (improvementUtility > voteUtility
         && improvementUtility > artifactUtility
@@ -353,98 +343,40 @@ object TestStuff extends App { while(true) FirstExperiment.qstn.choose_action() 
 
 // TODO Judging by this output it seems like I got the effect of a vote job wrong
 /*
-/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/bin/java -Didea.launcher.port=7536 "-Didea.launcher.bin.path=/Applications/IntelliJ IDEA 12 CE.app/bin" -Dfile.encoding=UTF-8 -classpath "/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/lib/ant-javafx.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/lib/dt.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/lib/javafx-doclet.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/lib/javafx-mx.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/lib/jconsole.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/lib/sa-jdi.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/lib/tools.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/charsets.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/jce.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/jfr.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/jfxrt.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/JObjC.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/jsse.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/management-agent.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/resources.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/rt.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/ext/dnsns.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/ext/localedata.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/ext/sunec.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/ext/sunjce_provider.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/ext/sunpkcs11.jar:/Library/Java/JavaVirtualMachines/1.7.0.jdk/Contents/Home/jre/lib/ext/zipfs.jar:/Users/Ethan/Dropbox/MLease/git/TurKPF/target/scala-2.10/classes:/Users/Ethan/.sbt/boot/scala-2.10.2/lib/scala-library.jar:/Users/Ethan/.ivy2/cache/org.apache.commons/commons-math3/jars/commons-math3-3.2.jar:/Applications/IntelliJ IDEA 12 CE.app/lib/idea_rt.jar" com.intellij.rt.execution.application.AppMain TestStuff
-probYes: 0.5652923690663553
-current balance     10.0
-Average:            0.10151655349996495
-artifactUtility:    64.97640576587854
-voteUtility:        113.74640375175498
-improvementUtility: 119.0314423092954
-meanQltyEst:        0.10151655349996495
-PrimeMeanQltyEst:   0.18013564994996462
+
+********************************************
+STEP 1:
+
+probYes: 0.515
+
+meanQltyEst:        0.4589
+PrimeMeanQltyEst:   0.4821
 
 => | IMPROVEMENT job |
 
+********************************************
+STEP 2:
+
+probYes: 0.500
+
+meanQltyEst:        0.4821
+PrimeMeanQltyEst:   0.4810
+
+=> | BALLOT job | => TRUE => (true)
 
 ********************************************
-probYes: 0.6519327142998282
-current balance     9.95
-Average:            0.18013564994996462
-artifactUtility:    119.0339423092954
-voteUtility:        226.54502317148973
-improvementUtility: 244.87009584697512
-meanQltyEst:        0.18013564994996462
-PrimeMeanQltyEst:   0.33941549019172357
+STEP 3:
 
-=> | IMPROVEMENT job |
+probYes: 0.498
 
+meanQltyEst:        0.4315
+PrimeMeanQltyEst:   0.4273
 
-********************************************
-probYes: 0.5699940078478649
-current balance     9.899999999999999
-Average:            0.33941549019172357
-artifactUtility:    244.87259584697512
-voteUtility:        306.2686164038555
-improvementUtility: 317.4977762519782
-meanQltyEst:        0.33941549019172357
-PrimeMeanQltyEst:   0.4219825641731508
-
-=> | IMPROVEMENT job |
-
-
-********************************************
-probYes: 0.5361471903273249
-current balance     9.849999999999998
-Average:            0.4219825641731508
-artifactUtility:    317.5002762519782
-voteUtility:        345.1513561515167
-improvementUtility: 352.9802559953438
-meanQltyEst:        0.4219825641731508
-PrimeMeanQltyEst:   0.45897610071240313
-
-=> | IMPROVEMENT job |
-
-
-********************************************
-probYes: 0.5157132396291504
-current balance     9.799999999999997
-Average:            0.45897610071240313
-artifactUtility:    352.9827559953438
-voteUtility:        374.0945590534782
-improvementUtility: 374.47282612041465
-meanQltyEst:        0.45897610071240313
-PrimeMeanQltyEst:   0.48210174578291526
-
-=> | IMPROVEMENT job |
-
-
-********************************************
-probYes: 0.5000715733514703
-current balance     9.749999999999996
-Average:            0.48210174578291526
-artifactUtility:    374.47532612041465
-voteUtility:        375.2511406270203
-improvementUtility: 374.47282612041465
-meanQltyEst:        0.48210174578291526
-PrimeMeanQltyEst:   0.4810626544719478
-
-=> | BALLOT job |
-vote :: TRUE #L293
-
-(true)
-
-
-********************************************
-probYes: 0.4984127794342908
-current balance     9.739999999999997
-Average:            0.43150336671449346
-artifactUtility:    325.9390272221734
-voteUtility:        324.0672429134455
-improvementUtility: 325.9365272221734
-meanQltyEst:        0.43150336671449346
-PrimeMeanQltyEst:   0.42730866809138157
-Final Utility: 325.9390272221734
+=> | SUBMIT |
 
 Process finished with exit code 0
+
+
+The most obvious of the apparent problems here is that
 
 */
