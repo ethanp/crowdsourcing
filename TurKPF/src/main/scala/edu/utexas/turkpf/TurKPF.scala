@@ -24,13 +24,13 @@ object apples {
     implicit def addNorm(a: Array[Double]): addNorm = new addNorm(a) {
         def normalize = {
             val norm = a.sum
-            a.map(_/norm)
+            a map {_/norm}
         }
     }
 }
 import apples._
 
-/* Particle Filter representation of artifact quality probability density functions */
+/* Particle Filter representation of artifact-quality Probability Density Functions */
 case class QualityDistribution(numParticles: Int, particles: Array[Double])
 {
     def this(n: Int) = this(n, new BetaDistribution(1,9).sample(n))
@@ -45,51 +45,41 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
         qlty + 0.5 * ((1 - qlty) * (accuracy - 0.5) + qlty * (accuracy - 1))
     }
 
-    // [DTC] § Experimental Setup
-    def improvementDistr(qlty: Double) = {
-        val mu = find_improvementFunctionMean(qlty)
-        new BetaDistribution(10 * mu, 10 * (1 - mu))
-    }
-
-    // [DTC] (eq. 1), q => generate f_{ Q' | particle.q } (q') and sample from it
-    /*
-     * THE WAY THIS WORKS:
+    /** [DTC] (eq. 1), q => generate f_{ Q' | particle.q } (q') and sample from it
+     * IN WORDS:
      * We go through each particle, and using its value (which is an estimate of the qlty),
      * we generate an "improvement distribution" describing how much we can expect [an avg.]
      * worker to improve the quality of the artifact. We take a "random" stab at the new
      * quality after the "improvement job" by sampling from the "improvement distribution".
      */
-    // TODO: This might be a faster way to implement this: (generating directly, not sampling)
-    // http://doodleproject.sourceforge.net/numerics/numerics4j/1.3/api/net/sf/doodleproject/numerics4j/random/BetaRandomVariable.html
-    def predict: QualityDistribution =
-        new QualityDistribution(particles map {improvementDistr(_).sample})
+    def predict: QualityDistribution = new QualityDistribution(
+        particles map { q =>  // [DTC] § Experimental Setup
+            val mu = find_improvementFunctionMean(q)
+            new BetaDistribution(10 * mu, 10 * (1 - mu)).sample
+    })
 
     /* fold ALL the partBs through prob_true() with EACH partA :  [DTC] (eq. 5-6) */
     def weight_and_sample(vote: Boolean, that: QualityDistribution, prime: Boolean):
     QualityDistribution = {
-
         // get P( b_{n+1} | q ) :  [DTC] (eq. 6) ; [TK=>PF] (eq. 8-9)
         val weights = {
-            this.particles map {
-                partA =>
-                    (0.0 /: that.particles)((sum, partB) => {
-                        val inTup = if (prime) (partB, partA) else (partA, partB)
-                        sum + qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(inTup._1, inTup._2))
-                    })
+            this.particles map { partA =>
+                (0.0 /: that.particles)((sum, partB) => {
+                    val inTup = if (prime) (partB, partA) else (partA, partB)
+                    sum + qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(inTup._1, inTup._2))
+                })
             }}.normalize
 
         // get f_{ Q | b_{n+1} } (q) :  [DTC] (eq. 5)
         new QualityDistribution(
-            this.particles.map(_ => random_sample_given_weights(weights)))
+            particles map {_ => repopulate(weights)})
     }
 
     /* algorithm for sampling from given set of points with associated weights:
      * generate a random number in [0,1), use the CDF of the weights to use the
      * random number to figure out what the sampled value is
-     *
-     * I debugged this function and it works as expected
      */
-    def random_sample_given_weights(weights: Array[Double]): Double = {
+    def repopulate(weights: Array[Double]): Double = {
         val rand = Random.nextDouble
         var accrue = 0.0
         for ((weight, index) <- weights.zipWithIndex) {
@@ -115,15 +105,13 @@ case class Workers(trueGX: Double)
     // [DTC] (above eq. 3)
     def accuracy(difficulty: Double) = 0.5 * (1 + pow(1 - difficulty, estGX))
 
-    /* I'm not sure about my whole "bigger/smaller" logic it was a guess...
-     *  plus there HAS to be a less unsightly way of accomplishing the same thing */
     // higher GX means Worse worker
     def updateGX(votes: List[Boolean]) {    // [DTC] (below eq. 12)
         val (trues, falses) = votes.partition(_ == true)
         val trueBigger = trues.length > falses.length
         val bigger  = if (trueBigger) trues.length  else falses.length
         val smaller = if (trueBigger) falses.length else trues.length
-        val d = qstn.artifact_difficulty
+        val d = qstn.dStar
         estGX -= bigger * d * LEARNING_RATE
         estGX += smaller * (1 - d) * LEARNING_RATE
     }
@@ -165,8 +153,7 @@ case class Question(trueAnswer: Boolean)
 
     // [DTC] (eq. 12)
     // this is O(numParticles^2)...they also note that this equation takes a while
-    // TODO: Why is this never used? What is this thing for anyway?
-    def dStar: Double = {
+    def dStarOLD: Double = {
         val normQ = f_Q_of_q.particles.sum
         val normQP = f_Q_of_qPrime.particles.sum
         (0.0 /: f_Q_of_q.particles)((sum, q) =>
@@ -176,9 +163,18 @@ case class Question(trueAnswer: Boolean)
         )
     }
 
+    def dStar: Double = {
+        (0.0 /: f_Q_of_q.particles)((sum, q) =>
+            sum + (0.0 /: f_Q_of_qPrime.particles)((sum2, qPrime) =>
+                sum2 + difficulty(q, qltyPrime)
+            )
+        ) / (NUM_PARTICLES * NUM_PARTICLES)
+    }
+
+
     def submit_final() = {
         println("Final Utility: " + artifact_utility)
-        sys.exit(0)
+        sys exit 0
     }
 
     // [DTC] (top-right of page 4)
