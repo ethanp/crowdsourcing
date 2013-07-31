@@ -19,6 +19,7 @@ import FirstExperiment._
 
 // add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
+
 object apples {
     implicit def addNorm(a: Array[Double]): addNorm = new addNorm(a) {
         def normalize = {
@@ -30,8 +31,8 @@ object apples {
 import apples._
 
 /* Particle Filter representation of artifact-quality Probability Density Functions */
-case class QualityDistribution(numParticles: Int, particles: Array[Double])
-{
+case class QualityDistribution(numParticles: Int, particles: Array[Double]) {
+
     def this(n: Int) = this(n, new BetaDistribution(1,9).sample(n))
 
     def this(particles: Array[Double]) = this(NUM_PARTICLES, particles)
@@ -91,8 +92,7 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
 }
 
 /* model all workers with just one worker-independent model */
-case class Workers(trueGX: Double)
-{
+case class Workers(trueGX: Double) {
     val LEARNING_RATE = 0.05
     var estGX: Double = 1    // set to the mean of the true distribution
                              // could be altered to test robustness
@@ -112,8 +112,8 @@ case class Workers(trueGX: Double)
     }
 }
 
-case class Question(trueAnswer: Boolean)
-{
+case class Question() {
+
     var balance = INITIAL_ALLOWANCE
     var qlty = INITIAL_QUALITY
     var qltyPrime = 0.0
@@ -147,17 +147,6 @@ case class Question(trueAnswer: Boolean)
         (0.0 /: dist.particles)(_ + estimate_artifact_utility(_)) / NUM_PARTICLES
 
     // [DTC] (eq. 12)
-    // this is O(numParticles^2)...they also note that this equation takes a while
-    def dStarOLD: Double = {
-        val normQ = f_Q_of_q.particles.sum
-        val normQP = f_Q_of_qPrime.particles.sum
-        (0.0 /: f_Q_of_q.particles)((sum, q) =>
-            sum + (0.0 /: f_Q_of_qPrime.particles)((sum2, qPrime) =>
-                sum2 + q * qPrime * difficulty(q, qPrime) / normQ
-            ) / normQP
-        )
-    }
-
     def dStar: Double = {
         (0.0 /: f_Q_of_q.particles)((sum, q) =>
             sum + (0.0 /: f_Q_of_qPrime.particles)((sum2, qPrime) =>
@@ -165,7 +154,6 @@ case class Question(trueAnswer: Boolean)
             )
         ) / (NUM_PARTICLES * NUM_PARTICLES)
     }
-
 
     def submit_final() = {
         println("Final Utility: " + artifact_utility)
@@ -255,7 +243,7 @@ case class Question(trueAnswer: Boolean)
         f_Q_of_q      = dist_Q_after_vote(vote)  // [DTC] (eqs. 4,5,6,7,8)
         f_Q_of_qPrime = dist_QPrime_after_vote(vote)
         votes ::= vote
-        print("(" + votes.mkString(", ") + ")\n")
+        println(votes.mkString("(",", ",")"))
         vote
     }
 
@@ -288,7 +276,7 @@ case class Question(trueAnswer: Boolean)
         val improvementUtility = utility_of_improvement_job
 
 //        println("\nParticles:\n(" + qstn.f_Q_of_q.particles.mkString(", ") + ")\n")
-//        println("current balance     " + balance)
+        println("current balance     " + balance)
 //        println("artifactUtility:    " + artifactUtility)
 //        println("voteUtility:        " + voteUtility)
 //        println("improvementUtility: " + improvementUtility)
@@ -300,7 +288,6 @@ case class Question(trueAnswer: Boolean)
           && balance > IMPROVEMENT_COST)
         {
             println("\n=> | IMPROVEMENT job |")
-            println("\n\n****************************************************")
             improvement_job()
         }
         else if (voteUtility > artifactUtility
@@ -308,14 +295,15 @@ case class Question(trueAnswer: Boolean)
         {
             println("\n=> | BALLOT job |")
             get_addnl_ballot_and_update_dists()
-            println("\n\n****************************************************")
         }
         else submit_final()
+
+        println("\n\n****************************************************")
     }
 }
 
-object FirstExperiment
-{
+object FirstExperiment {
+
     /* [DTC] gmX "follow a bell shaped distribution"
      *           "average error coefficient gm=1",
      *             where gmX > 0 */
@@ -340,7 +328,7 @@ object FirstExperiment
 
     /* so that MANY Questions can be run Per Experiment
      * I'ma try to get just one Question working first though */
-    val qstn = Question(trueAnswer=true)
+    val qstn = Question()
 }
 
 object TestStuff extends App { while(true) FirstExperiment.qstn.choose_action() }
