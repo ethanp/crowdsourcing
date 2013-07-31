@@ -177,10 +177,16 @@ case class Question(trueAnswer: Boolean)
         utility_of_stopping_voting - IMPROVEMENT_COST * UTILITY_OF_$$$
 
     // [DTC] (eq. 9)
-    def utility_of_stopping_voting: Double = { max(
-        convolute_Utility_with_Particles(f_Q_of_q.predict),  // [DTC] (eq. 10)
-        convolute_Utility_with_Particles(f_Q_of_qPrime.predict)  // [DTC] (eq. 11)
-    )}
+    def utility_of_stopping_voting: Double = {
+        val orig_predicted = convolute_Utility_with_Particles(f_Q_of_q.predict)
+        val prime_predicted = convolute_Utility_with_Particles(f_Q_of_qPrime.predict)
+
+        println("Predicted Original Utility:   " + orig_predicted)
+        println("Predicted Prime Utility:      " + prime_predicted)
+
+        // [DTC] (eq. 10 - 11)
+        max(orig_predicted, prime_predicted)
+    }
 
     /***************************** BALLOT JOB STUFF *******************************/
     // [DTC] (bottom-left Pg. 4)
@@ -286,19 +292,19 @@ case class Question(trueAnswer: Boolean)
 //        println("artifactUtility:    " + artifactUtility)
 //        println("voteUtility:        " + voteUtility)
 //        println("improvementUtility: " + improvementUtility)
-        println("Original Utility:   " + convolute_Utility_with_Particles(qstn.f_Q_of_q))
-        println("Prime Utility:      " + convolute_Utility_with_Particles(qstn.f_Q_of_qPrime))
+        println("Predicted Original Utility:   " + convolute_Utility_with_Particles(f_Q_of_q))
+        println("Predicted Prime Utility:      " + convolute_Utility_with_Particles(f_Q_of_qPrime))
 
         if (improvementUtility > voteUtility
-        && improvementUtility > artifactUtility
-        && balance > IMPROVEMENT_COST)
+          && improvementUtility > artifactUtility
+          && balance > IMPROVEMENT_COST)
         {
             println("\n=> | IMPROVEMENT job |")
             println("\n\n****************************************************")
             improvement_job()
         }
         else if (voteUtility > artifactUtility
-                && balance > BALLOT_COST)
+               && balance > BALLOT_COST)
         {
             println("\n=> | BALLOT job |")
             get_addnl_ballot_and_update_dists()
