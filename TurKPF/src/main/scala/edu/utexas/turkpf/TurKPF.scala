@@ -16,7 +16,6 @@ import scala.util.Random
  *  import SecondExperiment._  and so on  */
 import FirstExperiment._
 
-/* TODO: the LookAhead */
 
 // add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -71,8 +70,7 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double])
             }}.normalize
 
         // get f_{ Q | b_{n+1} } (q) :  [DTC] (eq. 5)
-        new QualityDistribution(
-            particles map {_ => repopulate(weights)})
+        new QualityDistribution( particles map { _ => repopulate(weights) } )
     }
 
     /* algorithm for sampling from given set of points with associated weights:
@@ -98,9 +96,6 @@ case class Workers(trueGX: Double)
     val LEARNING_RATE = 0.05
     var estGX: Double = 1    // set to the mean of the true distribution
                              // could be altered to test robustness
-
-    // [DTC] (eq. 3)
-    def generateVote(difficulty: Double): Boolean = random < accuracy(difficulty)
 
     // [DTC] (above eq. 3)
     def accuracy(difficulty: Double) = 0.5 * (1 + pow(1 - difficulty, estGX))
@@ -183,8 +178,8 @@ case class Question(trueAnswer: Boolean)
 
     // [DTC] (eq. 9)
     def utility_of_stopping_voting: Double = { max(
-        convolute_Utility_with_Particles(f_Q_of_q),  // [DTC] (eq. 10)
-        convolute_Utility_with_Particles(f_Q_of_qPrime)  // [DTC] (eq. 11)
+        convolute_Utility_with_Particles(f_Q_of_q.predict),  // [DTC] (eq. 10)
+        convolute_Utility_with_Particles(f_Q_of_qPrime.predict)  // [DTC] (eq. 11)
     )}
 
     /***************************** BALLOT JOB STUFF *******************************/
@@ -209,11 +204,9 @@ case class Question(trueAnswer: Boolean)
     def probability_of_yes_vote = {
         (0.0 /: f_Q_of_q.particles)((sumA, particleA) =>
             sumA + particleA * (0.0 /: f_Q_of_qPrime.particles)((sumB, particleB) =>
-
-                // TODO check that multiplying particleB in makes sense
-                sumB + prob_true_given_Qs(particleA, particleB) * particleB
-            ) / f_Q_of_qPrime.particles.sum
-        ) / f_Q_of_q.particles.sum
+                sumB + prob_true_given_Qs(particleA, particleB)
+            ) / NUM_PARTICLES
+        ) / NUM_PARTICLES
     }
 
     // I checked and this function works properly
@@ -251,7 +244,7 @@ case class Question(trueAnswer: Boolean)
 
     def get_addnl_ballot_and_update_dists(): Boolean = {
         balance -= BALLOT_COST  // pay for it
-        val vote: Boolean = wrkrs.generateVote(artifact_difficulty)
+        val vote = random < probability_of_yes_vote // heh heh.
         printf("vote :: %s #L293\n\n", vote.toString.toUpperCase)
         f_Q_of_q      = dist_Q_after_vote(vote)  // [DTC] (eqs. 4,5,6,7,8)
         f_Q_of_qPrime = dist_QPrime_after_vote(vote)
@@ -330,14 +323,14 @@ object FirstExperiment
     def estimate_artifact_utility(qlty: Double): Double =
         1000 * (exp(qlty) - 1) / (exp(1) - 1)
 
-    val IMPROVEMENT_COST    = .05
-    val BALLOT_COST         = .01
+    val IMPROVEMENT_COST    = 3
+    val BALLOT_COST         = .75
     val DIFFICULTY_CONSTANT = 0.5
-    val LOOKAHEAD_DEPTH     = 3  // not using this at this point
+    val LOOKAHEAD_DEPTH     = 3  /* TODO: THE LookAhead */
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 10.0
     val NUM_PARTICLES       = 1000
-    val UTILITY_OF_$$$      = .05  // let's just say it's "1" for simplicity
+    val UTILITY_OF_$$$      = 1  // let's just say it's "1" for simplicity
 
     /* so that MANY Questions can be run Per Experiment
      * I'ma try to get just one Question working first though */
