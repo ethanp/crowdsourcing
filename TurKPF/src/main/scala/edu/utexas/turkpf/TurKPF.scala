@@ -8,27 +8,19 @@
  * License:         Unknown
  */
 
+// TODO: Write the actions to a file, like { 0,0,0,1,0,0,1 } where 0 = improvement, 1 = ballot
+// then read it into an Excel and graph it at various levels of stuff
+
 import math._
 import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
 import scala.util.Random
 
-/* this means one can choose a set of parameters by replacing this line with
+/* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
 import FirstExperiment._
 
-
-// add "normalize" to Array[Dbl] to make ||Array|| = 1
+// implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
-
-object apples {
-    implicit def addNorm(a: Array[Double]): addNorm = new addNorm(a) {
-        def normalize = {
-            val norm = a.sum
-            a map {_/norm}
-        }
-    }
-}
-import apples._
 
 /* Particle Filter representation of artifact-quality Probability Density Functions */
 case class QualityDistribution(numParticles: Int, particles: Array[Double]) {
@@ -65,8 +57,8 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double]) {
         val weights = {
             this.particles map { partA =>
                 (0.0 /: that.particles)((sum, partB) => {
-                    val inTup = if (prime) (partB, partA) else (partA, partB)
-                    sum + qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(inTup._1, inTup._2))
+                    val (p1, p2) = if (prime) (partB, partA) else (partA, partB)
+                    sum + qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(p1, p2))
                 })
             }}.normalize
 
@@ -89,13 +81,20 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double]) {
         throw new RuntimeException // shouldn't ever get here
         particles(particles.length-1)
     }
+
+    implicit def addNorm(a: Array[Double]): addNorm = new addNorm(a) {
+        def normalize = {
+            val norm = a.sum
+            a map {_/norm}
+        }
+    }
 }
 
 /* model all workers with just one worker-independent model */
 case class Workers(trueGX: Double) {
     val LEARNING_RATE = 0.05
-    var estGX: Double = 1    // set to the mean of the true distribution
-                             // could be altered to test robustness
+    var estGX = 1.0  // set to the mean of the true distribution
+                     // could be altered to test robustness
 
     // [DTC] (above eq. 3)
     def accuracy(difficulty: Double) = 0.5 * (1 + pow(1 - difficulty, estGX))
@@ -177,13 +176,18 @@ case class Question() {
     }
 
     /***************************** BALLOT JOB STUFF *******************************/
-    // [DTC] (bottom-left Pg. 4)
+    /* [DTC] (bottom-left Pg. 4)
+     * PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
+     * Then, For each particle in the result of performing (eq. 5)
+     *   For each vote outcome \in { 0, 1 }
+     *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
+     */
     def utility_of_voting: Double = {
         val probYes = probability_of_yes_vote
         println("probYes: " + probYes)
         max(
-            expVal_OLD_artifact_with_addnl_vote(probYes),
-            expVal_NEW_artifact_with_addnl_vote(probYes)
+            expVal_after_a_vote(dist_Q_after_vote, probYes),
+            expVal_after_a_vote(dist_QPrime_after_vote, probYes)
         ) - BALLOT_COST * UTILITY_OF_$$$
     }
 
@@ -207,19 +211,6 @@ case class Question() {
     def prob_true_given_Qs(q: Double, qPrime: Double): Double =
         qstn.invertIfFalse(q < qPrime, wrkrs.accuracy(qstn.difficulty(q, qPrime)))
 
-    /* [DTC] (bottom-left Pg. 4)
-     * PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
-     * Then, For each particle in the result of performing (eq. 5)
-     *   For each vote outcome \in { 0, 1 }
-     *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
-     */
-    def expVal_OLD_artifact_with_addnl_vote(probYes: Double): Double =
-        expVal_after_a_vote(dist_Q_after_vote, probYes)
-
-    // E[ U( Q' | b_{n} + 1 ) ]; the same thing as above
-    def expVal_NEW_artifact_with_addnl_vote(probYes: Double) =
-        expVal_after_a_vote(dist_QPrime_after_vote, probYes)
-
     def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double = {
         if (probYes > 1 || probYes < 0) throw new RuntimeException
         convolute_Utility_with_Particles(f(true)) * probYes +
@@ -230,13 +221,11 @@ case class Question() {
     def dist_Q_after_vote(vote: Boolean): QualityDistribution =
         f_Q_of_q.weight_and_sample(vote, f_Q_of_qPrime, false)
 
-    /* [DTC] (eq. 7-8) the same as above, but the order in
-     *   which the distributions are used is switched
-     */
+    // [DTC] (eq. 7-8) the same as above
     def dist_QPrime_after_vote(vote: Boolean): QualityDistribution =
         f_Q_of_qPrime.weight_and_sample(vote, f_Q_of_q, true)
 
-    def get_addnl_ballot_and_update_dists(): Boolean = {
+    def ballot_job(): Boolean = {
         balance -= BALLOT_COST  // pay for it
         val vote = random < probability_of_yes_vote // heh heh.
         printf("vote :: %s #L293\n\n", vote.toString.toUpperCase)
@@ -270,6 +259,54 @@ case class Question() {
         f_Q_of_qPrime = f_Q_of_q.predict
     }
 
+    /** TODO: Here's how the LookAhead might be implemented:
+      *
+      * The Data Structure
+      * List(
+      *   Tuple(
+      *     List( action1, ..., actionN ),
+      *     Tuple( f(q), f(q'), balance ),
+      *     runningReward
+      *   ),
+      *   ...,
+      *   Tuple ( ... )
+      * )
+      *
+      * GoDeeper( DataStruct, maxDepth, currentDepth ):
+      *   For Tuple in DataStruct:
+      *     If Tuple doesn't end in a "submit":
+      *       Replace that tuple with 3 new ones, 1 for each action in [b,i,s], calculating the score
+      * Sort the Tuples by score and perform actionList.head.
+      */
+    /* so that MANY Questions can be run Per Experiment
+     * I'ma try to get just one Question working first though */
+    def look_ahead(lookaheadList: List[Lookahead], currentDepth: Int) {
+
+        // all done, return the first action from the highest performing sequence of actions:
+        if (currentDepth == LOOKAHEAD_DEPTH) {
+            lookaheadList.sortWith(_.utility > _.utility).head.actions.head match {
+                case "improve" => improvement_job()
+                case "ballot" => ballot_job()
+                case "submit" => submit_final()
+                case _ => throw new RuntimeException
+            }
+        }
+
+        val newLookahead = Lookahead // TODO needs args...
+        for (look <- lookaheadList) {
+            if (look.actions.last != "submit") {
+                for (action <- List("improve", "ballot", "submit")) {
+                    val (f_qNew, f_qPrimeNew, curBalNew) =  action match {
+                        case "improve" => improvement_job() // needs to take args and return new versions
+                        case "ballot" => ballot_job()
+                        case "submit" => submit_final()
+                        case _ => throw new RuntimeException
+                    }
+                }
+            }
+        }
+    }
+
     def choose_action() {
         val artifactUtility    = artifact_utility
         val voteUtility        = utility_of_voting
@@ -294,13 +331,18 @@ case class Question() {
                && balance > BALLOT_COST)
         {
             println("\n=> | BALLOT job |")
-            get_addnl_ballot_and_update_dists()
+            ballot_job()
         }
         else submit_final()
 
         println("\n\n****************************************************")
     }
 }
+
+case class Lookahead(actions: List[String],
+                     f_q: QualityDistribution, f_qPrime: QualityDistribution,
+                     utility: Double,
+                     curBalance: Double)
 
 object FirstExperiment {
 
@@ -324,10 +366,8 @@ object FirstExperiment {
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 10.0
     val NUM_PARTICLES       = 1000
-    val UTILITY_OF_$$$      = 1  // let's just say it's "1" for simplicity
+    val UTILITY_OF_$$$      = 1.0  // let's just say it's "1" for simplicity
 
-    /* so that MANY Questions can be run Per Experiment
-     * I'ma try to get just one Question working first though */
     val qstn = Question()
 }
 
