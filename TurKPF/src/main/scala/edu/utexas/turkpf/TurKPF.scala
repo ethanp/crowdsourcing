@@ -8,9 +8,9 @@
  * License:         Unknown
  */
 
-// TODO: Write the actions to a file, like { 0,0,0,1,0,0,1 } where 0 = improvement, 1 = ballot
-// then read it into an Excel and graph it at various levels of stuff
+// TODO read it into an Excel and graph it at various levels of stuff
 
+import java.io.{File, PrintWriter}
 import math._
 import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
 import scala.annotation.tailrec
@@ -132,6 +132,7 @@ case class QuestionState() {
     var f_QPrime = new QualityDistribution(
         new BetaDistribution(2,9).sample(NUM_PARTICLES)
     )
+    val output = new PrintWriter(new File("test.txt"))
 }
 
 case class Question() {
@@ -166,6 +167,7 @@ case class Question() {
 
     def submit_final() = {
         println("Final Utility: " + (utility_of_submitting() + state.balance * UTILITY_OF_$$$))
+        state.output.close()
         sys exit 0
     }
 
@@ -277,6 +279,7 @@ case class Question() {
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
+        state.output.write("1\t")
         vote
     }
 
@@ -314,6 +317,7 @@ case class Question() {
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
+        state.output.write("0\t")
     }
 
      /*   For Tuple in DataStruct:
@@ -329,8 +333,8 @@ case class Question() {
         // all done, perform the first action from the highest performing sequence of actions:
         if (currentDepth == LOOKAHEAD_DEPTH) {
             val bestPath: List[String] = lookaheadList.sortWith(_.utility > _.utility).head.actions
-            println(bestPath.reverse.mkString("Best Path: ", ", ", ""))
-            bestPath.last match {
+            println(bestPath.mkString("Best Path: ", ", ", ""))
+            bestPath.head match {
 
                 case "improve" => {
                     println("improvement")
@@ -456,7 +460,7 @@ object FirstExperiment {
     val IMPROVEMENT_COST    = 3
     val BALLOT_COST         = .75
     val DIFFICULTY_CONSTANT = 0.5
-    val LOOKAHEAD_DEPTH     = 2  /* TODO: THE LookAhead */
+    val LOOKAHEAD_DEPTH     = 2
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 10.0
     val NUM_PARTICLES       = 100
