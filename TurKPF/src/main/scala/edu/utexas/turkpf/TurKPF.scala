@@ -329,8 +329,8 @@ case class Question() {
         // all done, perform the first action from the highest performing sequence of actions:
         if (currentDepth == LOOKAHEAD_DEPTH) {
             val bestPath: List[String] = lookaheadList.sortWith(_.utility > _.utility).head.actions
-            println(bestPath.mkString("Best Path: ", ", ", ""))
-            bestPath.head match {
+            println(bestPath.reverse.mkString("Best Path: ", ", ", ""))
+            bestPath.last match {
 
                 case "improve" => {
                     println("improvement")
@@ -349,28 +349,21 @@ case class Question() {
 
                 case _ => throw new RuntimeException
             }
-        }
-        // fill in the next layer of branches and recurse
-        var newLookaheadList = List[Lookahead]()
-        if (!lookaheadList.isEmpty) {
-            for (look <- lookaheadList) {
-                newLookaheadList = go_deeper(look, newLookaheadList)
+        } else {
+            // fill in the next layer of branches and recurse
+            var newLookaheadList = List[Lookahead]()
+            if (!lookaheadList.isEmpty) {
+                for (look <- lookaheadList) {
+                    newLookaheadList = go_deeper(look, newLookaheadList)
+                }
             }
-        }
-        else {
-            newLookaheadList =
+            else newLookaheadList =
                 go_deeper(
-                    new Lookahead(
-                        List[String](),
-                        state.f_Q,
-                        state.f_Q,
-                        0,
-                        state.balance
-                    ),
-                  newLookaheadList
+                    new Lookahead(List[String](), state.f_Q, state.f_QPrime, 0, state.balance),
+                    newLookaheadList
                 )
+            look_ahead(newLookaheadList, currentDepth + 1)
         }
-        look_ahead(newLookaheadList, currentDepth + 1)
     }
 
     def go_deeper(look: Lookahead, newLookaheadList: List[Lookahead]): List[Lookahead] = {
@@ -466,11 +459,11 @@ object FirstExperiment {
     val LOOKAHEAD_DEPTH     = 2  /* TODO: THE LookAhead */
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 10.0
-    val NUM_PARTICLES       = 10
+    val NUM_PARTICLES       = 100
     val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
     val qstn = Question()
 }
 
 object choose_action extends App { while(true) FirstExperiment.qstn.choose_action() }
-object look_ahead extends App { while(true) FirstExperiment.qstn.look_ahead() }
+object look_ahead    extends App { while(true) FirstExperiment.qstn.look_ahead()    }
