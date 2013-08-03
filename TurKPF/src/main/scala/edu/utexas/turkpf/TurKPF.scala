@@ -16,7 +16,7 @@ package edu.utexas.turkpf
 // maybe the first value denotes which version of the program I'm running:
 //   { 0: choose_action(), 1: look_ahead() }
 
-import java.io.{File, PrintWriter}
+import java.io.FileWriter
 import math._
 import org.apache.commons.math3.distribution.BetaDistribution
 import scala.annotation.tailrec
@@ -138,10 +138,10 @@ case class QuestionState() {
     var f_QPrime = new PF(
         new BetaDistribution(2,9).sample(NUM_PARTICLES)
     )
-    val output: PrintWriter = new PrintWriter(new File("test.txt"))
+    val output: FileWriter = new FileWriter("test.txt", true)
 }
 
-case class Question() {
+case class Question(args: Set[String] = Set[String]()) {
 
     val state = QuestionState()
 
@@ -172,8 +172,13 @@ case class Question() {
     }
 
     def submit_final() = {
-        println("Final Utility: " + (utility_of_submitting() + state.balance * UTILITY_OF_$$$))
-        state.output.write("2\n")
+        val finalUtility = utility_of_submitting() + state.balance * UTILITY_OF_$$$
+        if (!args.contains("nostdout"))
+            println("Final Utility: " + finalUtility)
+        if (args contains "actions")
+            state.output.write("2\t")
+        if (args contains "finalUtil")
+            state.output.write(finalUtility + "\t")
         state.output.close()
         sys exit 0
     }
@@ -192,9 +197,11 @@ case class Question() {
     (Double, Double) = {
         val orig_predicted = convolute_Utility_with_Particles(f_Q.predict)
         val prime_predicted = convolute_Utility_with_Particles(f_QPrime.predict)
-        if (f_Q == state.f_Q) {
-            println("Predicted Original Utility:   " + orig_predicted)
-            println("Predicted Prime Utility:      " + prime_predicted)
+        if (!args.contains("nostdout")) {
+            if (f_Q == state.f_Q) {
+                println("Predicted Original Utility:   " + orig_predicted)
+                println("Predicted Prime Utility:      " + prime_predicted)
+            }
         }
         (orig_predicted, prime_predicted)
     }
@@ -205,7 +212,8 @@ case class Question() {
                           f_QPrime: PF = state.f_QPrime):
     Double = {
         val probYes = probability_of_yes_vote(f_Q, f_QPrime)
-        println("probYes: " + probYes)
+        if (!args.contains("nostdout"))
+            println("probYes: " + probYes)
         max(
             expVal_after_a_vote(dist_Q_after_vote(f_Q, f_QPrime), probYes),
             expVal_after_a_vote(dist_QPrime_after_vote(f_Q, f_QPrime), probYes)
@@ -280,13 +288,16 @@ case class Question() {
     def ballot_job(): Boolean = {
         val vote = random < probability_of_yes_vote()
         state.votes ::= vote
-        printf("vote :: %s #L293\n\n", vote.toString.toUpperCase)
-        println(state.votes.mkString("(",", ",")"))
+        if (!args.contains("nostdout"))
+            printf("vote :: %s #L293\n\n", vote.toString.toUpperCase)
+        if (!args.contains("nostdout"))
+            println(state.votes.reverse.mkString("(",", ",")"))
         val newState   = ballot_job(state.f_Q, state.f_QPrime, state.balance, vote)
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
-        state.output.write("1\t")
+        if (args contains "actions")
+            state.output.write("1\t")
         vote
     }
 
@@ -324,7 +335,8 @@ case class Question() {
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
-        state.output.write("0\t")
+        if (args contains "actions")
+            state.output.write("0\t")
     }
 
      /*   For Tuple in DataStruct:
@@ -344,8 +356,8 @@ case class Question() {
               .filter(_.curBalance > 0.0)
               .sortWith(_.utility > _.utility)
               .head.actions.reverse
-
-            println(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
+            if (!args.contains("nostdout"))
+                println(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
             execute_action(bestRoute.head)
         }
         else { // fill in the next layer of branches and recurse
@@ -367,9 +379,9 @@ case class Question() {
     }
 
     def execute_action(action: String) { action match {
-        case "improve" => { println("improvement"); improvement_job() }
-        case "ballot" =>  { println("ballot");      ballot_job()      }
-        case "submit" =>  { println("submit");      submit_final()    }
+        case "improve" => { if (!args.contains("nostdout")) println("improvement"); improvement_job() }
+        case "ballot" =>  { if (!args.contains("nostdout")) println("ballot");      ballot_job()      }
+        case "submit" =>  { if (!args.contains("nostdout")) println("submit");      submit_final()    }
         case _ => throw new RuntimeException
     }}
 
@@ -412,30 +424,34 @@ case class Question() {
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
 
-//        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
-        println("current balance     " + state.balance)
-//        println("artifactUtility:    " + artifactUtility)
-//        println("voteUtility:        " + voteUtility)
-//        println("improvementUtility: " + improvementUtility)
-        println("Predicted Original Utility:   " + convolute_Utility_with_Particles(state.f_Q))
-        println("Predicted Prime Utility:      " + convolute_Utility_with_Particles(state.f_QPrime))
+        if (!args.contains("nostdout")) {
+            //        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
+            println("current balance     " + state.balance)
+    //        println("artifactUtility:    " + artifactUtility)
+    //        println("voteUtility:        " + voteUtility)
+    //        println("improvementUtility: " + improvementUtility)
+            println("Predicted Original Utility:   " + convolute_Utility_with_Particles(state.f_Q))
+            println("Predicted Prime Utility:      " + convolute_Utility_with_Particles(state.f_QPrime))
+        }
 
         if (improvementUtility > voteUtility
           && improvementUtility > artifactUtility
           && state.balance > IMPROVEMENT_COST)
         {
-            println("\n=> | IMPROVEMENT job |")
+            if (!args.contains("nostdout"))
+                println("\n=> | IMPROVEMENT job |")
             improvement_job()
         }
         else if (voteUtility > artifactUtility
                && state.balance > BALLOT_COST)
         {
-            println("\n=> | BALLOT job |")
+            if (!args.contains("nostdout"))
+                println("\n=> | BALLOT job |")
             ballot_job()
         }
         else submit_final()
-
-        println("\n\n****************************************************")
+        if (!args.contains("nostdout"))
+            println("\n\n****************************************************")
     }
 }
 

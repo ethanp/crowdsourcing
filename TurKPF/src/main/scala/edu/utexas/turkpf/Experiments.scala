@@ -77,9 +77,7 @@ object Vary_Ballot_Cost extends App with Exp {
     val INITIAL_ALLOWANCE   = 10.0
     val NUM_PARTICLES       = 100
     val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
-    val qstn = Question()
+    val qstn = Question(Set("finalUtil"))
     qstn.state.output.write(writeParameters(new StringBuilder))
-
-    println(writeParameters(new StringBuilder))
     while(true) qstn.look_ahead()
 }
