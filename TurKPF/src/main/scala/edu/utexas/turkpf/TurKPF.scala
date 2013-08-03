@@ -198,8 +198,8 @@ case class Question() {
         val probYes = probability_of_yes_vote(f_Q, f_QPrime)
         println("probYes: " + probYes)
         max(
-            expVal_after_a_vote(dist_Q_after_vote, probYes),
-            expVal_after_a_vote(dist_QPrime_after_vote, probYes)
+            expVal_after_a_vote(dist_Q_after_vote(f_Q, f_QPrime), probYes),
+            expVal_after_a_vote(dist_QPrime_after_vote(f_Q, f_QPrime), probYes)
         ) - BALLOT_COST * UTILITY_OF_$$$
     }
 
@@ -236,14 +236,14 @@ case class Question() {
 
     // [DTC] (eq. 5)
     def dist_Q_after_vote(f_Q:      QualityDistribution = state.f_Q,
-                          f_QPrime: QualityDistribution = state.f_QPrime,
-                          vote:     Boolean):
+                          f_QPrime: QualityDistribution = state.f_QPrime)
+                         (vote:     Boolean):
     QualityDistribution = f_Q.weight_and_sample(vote, f_QPrime, false)
 
     // [DTC] (eq. 7-8) the same as above
     def dist_QPrime_after_vote(f_Q:      QualityDistribution = state.f_Q,
-                               f_QPrime: QualityDistribution = state.f_QPrime,
-                               vote:     Boolean):
+                               f_QPrime: QualityDistribution = state.f_QPrime)
+                              (vote:     Boolean):
     QualityDistribution = f_QPrime.weight_and_sample(vote, f_Q, true)
 
 
@@ -257,8 +257,8 @@ case class Question() {
             case v if v == None => random < probability_of_yes_vote(f_Q, f_QPrime)
             case v => v
         }
-        (dist_Q_after_vote(f_Q, f_QPrime, theVote),
-         dist_QPrime_after_vote(f_Q, f_QPrime, theVote),
+        (dist_Q_after_vote(f_Q, f_QPrime)(theVote),
+         dist_QPrime_after_vote(f_Q, f_QPrime)(theVote),
          balance - BALLOT_COST)
     }
 
