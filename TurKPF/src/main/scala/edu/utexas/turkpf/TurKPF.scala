@@ -8,6 +8,8 @@
  * License:         Unknown
  */
 
+package edu.utexas.turkpf
+
 // TODO read it into an Excel and graph it at various levels of stuff
 // the first thing it prints each run should be a listing of the parameter values
 // then the values can be used to "join" the data within Excel
@@ -16,12 +18,12 @@
 
 import java.io.{File, PrintWriter}
 import math._
-import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
+import org.apache.commons.math3.distribution.BetaDistribution
 import scala.annotation.tailrec
 import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
- *  import SecondExperiment._  and so on  */
+ *  import SecondExperiment.experiment_parameters._  and so on  */
 import FirstExperiment._
 
 
@@ -136,7 +138,7 @@ case class QuestionState() {
     var f_QPrime = new PF(
         new BetaDistribution(2,9).sample(NUM_PARTICLES)
     )
-    val output = new PrintWriter(new File("test.txt"))
+    val output: PrintWriter = new PrintWriter(new File("test.txt"))
 }
 
 case class Question() {
@@ -432,38 +434,11 @@ case class Question() {
     }
 }
 
-case class Lookahead(actions: List[String],
+case class Lookahead(actions:    List[String],
                      f_Q:        PF,
                      f_QPrime:   PF,
                      utility:    Double,
                      curBalance: Double)
 
-object FirstExperiment {
-
-    /* [DTC] gmX "follow a bell shaped distribution"
-     *           "average error coefficient gm=1",
-     *             where gmX > 0 */
-    val WORKER_DIST = new NormalDistribution(1,0.2)
-
-    /* this is a method so that it can be set to generate a random
-     * initial quality every time a question starts */
-    def INITIAL_QUALITY = .01 // new BetaDistribution(1,9).sample
-
-    // [DTC] § Experimental Setup
-    def estimate_artifact_utility(qlty: Double): Double =
-        1000 * (exp(qlty) - 1) / (exp(1) - 1)
-
-    val IMPROVEMENT_COST    = 3
-    val BALLOT_COST         = .75
-    val DIFFICULTY_CONSTANT = 0.5
-    val LOOKAHEAD_DEPTH     = 2
-    val NUM_QUESTIONS       = 10000
-    val INITIAL_ALLOWANCE   = 10.0
-    val NUM_PARTICLES       = 100
-    val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
-
-    val qstn = Question()
-}
-
-object choose_action extends App { while(true) FirstExperiment.qstn.choose_action() }
-object look_ahead    extends App { while(true) FirstExperiment.qstn.look_ahead()    }
+object Test_choose_action extends App { while(true) FirstExperiment.qstn.choose_action() }
+object Test_look_ahead    extends App { while(true) FirstExperiment.qstn.look_ahead()    }
