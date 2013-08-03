@@ -339,15 +339,20 @@ case class Question() {
                          currentDepth:  Int = 0) {
         // all done, perform the first action from the highest performing sequence of actions:
         if (currentDepth == LOOKAHEAD_DEPTH) {
-            val bestPath: List[String] = lookaheadList.sortWith(_.utility > _.utility).head.actions
-            println(bestPath.mkString("Best Path: ", ", ", ""))
+            lookaheadList.foreach(route => println(route.actions.mkString(", ")))
+            val bestRoute = lookaheadList.view
+              .filter(_.curBalance > 0.0)
+              .sortWith(_.utility > _.utility)
+              .head
+            println("Balance: " + bestRoute.curBalance)
+            println(bestRoute.actions.mkString("Best Path: ", ", ", ""))
 
-            /** TODO: I think this should be "last" instead of "head"
+            /** TODO: this should be "last" instead of "head"
               * at this point, I can't use "last" because then the best route
               * always seems to be (submit, ballot), i.e. (ballot -> submit),
               * which means it never actually terminates.
               */
-            execute_action(bestPath.head)
+            execute_action(bestRoute.actions.last)
         } else {
             // fill in the next layer of branches and recurse
             var newLookaheadList = List[Lookahead]()
@@ -391,13 +396,10 @@ case class Question() {
 
                 }
                 val utility: Double = {
-                    if (curBalNew < 0.0)
-                        -5.0
-                    else
-                        max(
-                            convolute_Utility_with_Particles(f_qNew),
-                            convolute_Utility_with_Particles(f_QPrimeNew)
-                        ) - (route.curBalance - curBalNew * UTILITY_OF_$$$)
+                    max(
+                        convolute_Utility_with_Particles(f_qNew),
+                        convolute_Utility_with_Particles(f_QPrimeNew)
+                    ) - (route.curBalance - curBalNew * UTILITY_OF_$$$)
                 }
 
                 new Lookahead(
