@@ -14,7 +14,6 @@ object FirstExperiment extends Exp {
      * initial quality every time a question starts */
     def INITIAL_QUALITY = .01 // new BetaDistribution(1,9).sample
 
-
     val IMPROVEMENT_COST    = 3.0
     val BALLOT_COST         = .75
     val DIFFICULTY_CONSTANT = 0.5
@@ -26,7 +25,7 @@ object FirstExperiment extends Exp {
     val qstn = Question()
 }
 
-abstract class Exp() {
+trait Exp {
     val WORKER_DIST:         NormalDistribution
     def INITIAL_QUALITY:     Double
     // [DTC] § Experimental Setup, i.e. U(q)
@@ -58,6 +57,29 @@ abstract class Exp() {
     }
 }
 
-object Test_FirstExperiment extends App {
-    println(FirstExperiment.writeParameters(new StringBuilder()))
+object Test_FirstExperiment extends App { println(FirstExperiment.writeParameters(new StringBuilder)) }
+
+object Vary_Ballot_Cost extends App with Exp {
+
+    /* [DTC] gmX "follow a bell shaped distribution"
+     *           "average error coefficient gm=1",
+     *             where gmX > 0 */
+    val WORKER_DIST = new NormalDistribution(1,0.2)
+
+    /* this is a method so that it can be set to generate a random
+     * initial quality every time a question starts */
+    def INITIAL_QUALITY = .01 // new BetaDistribution(1,9).sample
+
+    val IMPROVEMENT_COST    = 3.0
+    val BALLOT_COST         = .75
+    val DIFFICULTY_CONSTANT = 0.5
+    val LOOKAHEAD_DEPTH     = 2
+    val NUM_QUESTIONS       = 10
+    val INITIAL_ALLOWANCE   = 10.0
+    val NUM_PARTICLES       = 100
+    val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
+    val qstn = Question()
+
+    println(writeParameters(new StringBuilder))
+    while(true) qstn.look_ahead()
 }
