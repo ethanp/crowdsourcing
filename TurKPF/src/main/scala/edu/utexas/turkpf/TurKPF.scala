@@ -13,6 +13,7 @@
 
 import math._
 import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
+import scala.annotation.tailrec
 import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
@@ -49,10 +50,13 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double]) {
         particles map { q =>  // [DTC] § Experimental Setup
             val mu = find_improvementFunctionMean(q)
             new BetaDistribution(10 * mu, 10 * (1 - mu)).sample
-    })
+        }
+    )
 
     /* fold ALL the partBs through prob_true() with EACH partA :  [DTC] (eq. 5-6) */
-    def weight_and_sample(vote: Boolean, that: QualityDistribution, prime: Boolean):
+    def weight_and_sample(vote:  Boolean,
+                          that:  QualityDistribution,
+                          prime: Boolean):
     QualityDistribution = {
         // get P( b_{n+1} | q ) :  [DTC] (eq. 6) ; [TK=>PF] (eq. 8-9)
         val weights = {
@@ -83,7 +87,8 @@ case class QualityDistribution(numParticles: Int, particles: Array[Double]) {
         particles(particles.length-1)
     }
 
-    implicit def addNorm(a: Array[Double]): addNorm = new addNorm(a) {
+    implicit def addNorm(a: Array[Double]):
+    addNorm = new addNorm(a) {
         def normalize = {
             val norm = a.sum
             a map {_/norm}
@@ -137,16 +142,18 @@ case class Question() {
     val wrkrs = Workers(state.workerTrueGm)
 
     // [DTC] (eq. 2)
-    def difficulty(qlty: Double, qltyPrime: Double): Double =
-        1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
+    def difficulty(qlty: Double,
+                   qltyPrime: Double):
+    Double = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
 
-    def utility_of_submitting(f_Q: QualityDistribution = state.f_Q,
+    def utility_of_submitting(f_Q:      QualityDistribution = state.f_Q,
                               f_QPrime: QualityDistribution = state.f_QPrime):
-    Double = max(convolute_Utility_with_Particles(f_Q), convolute_Utility_with_Particles(f_QPrime))
+    Double = max(convolute_Utility_with_Particles(f_Q),
+                 convolute_Utility_with_Particles(f_QPrime))
 
     // the math for this checks out
-    def convolute_Utility_with_Particles(dist: QualityDistribution): Double =
-        (0.0 /: dist.particles)(_ + estimate_artifact_utility(_)) / NUM_PARTICLES
+    def convolute_Utility_with_Particles(dist: QualityDistribution):
+    Double = (0.0 /: dist.particles)(_ + estimate_artifact_utility(_)) / NUM_PARTICLES
 
     // [DTC] (eq. 12)
     def dStar: Double = {
@@ -164,14 +171,16 @@ case class Question() {
 
     // [DTC] (top-right of page 4)
     def utility_of_improvement_job(f_Q:      QualityDistribution = state.f_Q,
-                                   f_QPrime: QualityDistribution = state.f_QPrime): Double = {
+                                   f_QPrime: QualityDistribution = state.f_QPrime):
+    Double = {
         val (orig_predicted, prime_predicted) = utility_of_stopping_voting(f_Q, f_QPrime)
         max(orig_predicted, prime_predicted) - IMPROVEMENT_COST * UTILITY_OF_$$$
     }
 
     // [DTC] (eq. 9)
-    def utility_of_stopping_voting(f_Q: QualityDistribution = state.f_Q,
-                                   f_QPrime: QualityDistribution = state.f_QPrime): (Double, Double) = {
+    def utility_of_stopping_voting(f_Q:      QualityDistribution = state.f_Q,
+                                   f_QPrime: QualityDistribution = state.f_QPrime):
+    (Double, Double) = {
         val orig_predicted = convolute_Utility_with_Particles(f_Q.predict)
         val prime_predicted = convolute_Utility_with_Particles(f_QPrime.predict)
         if (f_Q == state.f_Q) {
@@ -182,14 +191,10 @@ case class Question() {
     }
 
     /***************************** BALLOT JOB STUFF *******************************/
-    /* [DTC] (bottom-left Pg. 4)
-     * PSEUDOCODE for calculating E[ U( Q | b_{n} + 1 ) ]:
-     * Then, For each particle in the result of performing (eq. 5)
-     *   For each vote outcome \in { 0, 1 }
-     *     Multiply U(q) * particle.q * P(b_{n+1} = {0,1})
-     */
-    def utility_of_voting(f_Q: QualityDistribution = state.f_Q,
-                          f_QPrime: QualityDistribution = state.f_QPrime): Double = {
+    // [DTC] (bottom-left Pg. 4) ;  i.e.  E[ U( Q | b_{n} + 1 ) ]
+    def utility_of_voting(f_Q:      QualityDistribution = state.f_Q,
+                          f_QPrime: QualityDistribution = state.f_QPrime):
+    Double = {
         val probYes = probability_of_yes_vote(f_Q, f_QPrime)
         println("probYes: " + probYes)
         max(
@@ -221,36 +226,40 @@ case class Question() {
     def prob_true_given_Qs(q: Double, qPrime: Double): Double =
         qstn.invertIfFalse(q < qPrime, wrkrs.accuracy(qstn.difficulty(q, qPrime)))
 
-    def expVal_after_a_vote(f: Boolean => QualityDistribution, probYes: Double): Double = {
+    def expVal_after_a_vote(f: Boolean => QualityDistribution,
+                            probYes: Double):
+    Double = {
         if (probYes > 1 || probYes < 0) throw new RuntimeException
         convolute_Utility_with_Particles(f(true)) * probYes +
-        convolute_Utility_with_Particles(f(false)) * (1 - probYes)
+            convolute_Utility_with_Particles(f(false)) * (1 - probYes)
     }
 
     // [DTC] (eq. 5)
     def dist_Q_after_vote(f_Q:      QualityDistribution = state.f_Q,
                           f_QPrime: QualityDistribution = state.f_QPrime,
-                          vote: Boolean):
+                          vote:     Boolean):
     QualityDistribution = f_Q.weight_and_sample(vote, f_QPrime, false)
 
     // [DTC] (eq. 7-8) the same as above
     def dist_QPrime_after_vote(f_Q:      QualityDistribution = state.f_Q,
                                f_QPrime: QualityDistribution = state.f_QPrime,
-                               vote: Boolean):
+                               vote:     Boolean):
     QualityDistribution = f_QPrime.weight_and_sample(vote, f_Q, true)
 
 
     // [DTC] (eqs. 4,5,6,7,8)
-    def ballot_job(f_Q: QualityDistribution,
+    def ballot_job(f_Q:      QualityDistribution,
                    f_QPrime: QualityDistribution,
-                   balance: Double,
+                   balance:  Double,
                    vote: Boolean = None):
     (QualityDistribution, QualityDistribution, Double) = {
         val theVote = vote match {
             case v if v == None => random < probability_of_yes_vote(f_Q, f_QPrime)
             case v => v
         }
-        (dist_Q_after_vote(f_Q, f_QPrime, theVote), dist_QPrime_after_vote(f_Q, f_QPrime, theVote), balance - BALLOT_COST)
+        (dist_Q_after_vote(f_Q, f_QPrime, theVote),
+         dist_QPrime_after_vote(f_Q, f_QPrime, theVote),
+         balance - BALLOT_COST)
     }
 
     /**
@@ -260,7 +269,6 @@ case class Question() {
      * 4. Return vote
      */
     def ballot_job(): Boolean = {
-
         val vote = random < probability_of_yes_vote()
         printf("vote :: %s #L293\n\n", vote.toString.toUpperCase)
         state.votes ::= vote
@@ -279,14 +287,19 @@ case class Question() {
      * 2. choose to continue with alpha or alphaPrime [DTC top-right pg. 4]
      * 3. create new prior for quality of improved artifact
      */
-    def improvement_job(f_Q_of_q: QualityDistribution, f_Q_of_QPrime: QualityDistribution, balance: Double):
+    def improvement_job(f_Q:      QualityDistribution,
+                        f_QPrime: QualityDistribution,
+                        balance:       Double):
     (QualityDistribution, QualityDistribution, Double) = {
+        val imprvF_Q = f_Q.predict
+        val imprvF_QPrime = f_QPrime.predict
+
         val newF_Q_of_q = {
-            if (convolute_Utility_with_Particles(f_Q_of_q)
-              < convolute_Utility_with_Particles(f_Q_of_QPrime))
-                f_Q_of_QPrime
+            if (convolute_Utility_with_Particles(imprvF_Q)
+              > convolute_Utility_with_Particles(imprvF_QPrime))
+                imprvF_Q
             else
-                f_Q_of_q
+                imprvF_QPrime
         }
         (newF_Q_of_q, newF_Q_of_q.predict, balance - IMPROVEMENT_COST)
     }
@@ -303,46 +316,72 @@ case class Question() {
       * GoDeeper( DataStruct, maxDepth, currentDepth ):
       *   For Tuple in DataStruct:
       *     If Tuple doesn't end in a "submit":
-      *       Replace that tuple with 3 new ones, 1 for each action in [b,i,s], calculating the score
-      * Sort the Tuples by score and perform actionList.head.
+      *       Replace that tuple with 3 new ones,
+      *           1 for each action in [b,i,s],
+      *           recalculating the utility
+      * Sort the Tuples by utility and perform actionList.head.
       */
-    def look_ahead(lookaheadList: List[Lookahead], currentDepth: Int) {
+    @tailrec
+    final def look_ahead(lookaheadList: List[Lookahead],
+                   currentDepth:  Int) {
 
         // all done, return the first action from the highest performing sequence of actions:
         if (currentDepth == LOOKAHEAD_DEPTH) {
             lookaheadList.sortWith(_.utility > _.utility).head.actions.head match {
+
                 case "improve" => improvement_job()
+
                 case "ballot" => ballot_job()
+
                 case "submit" => submit_final()
+
                 case _ => throw new RuntimeException
             }
         }
 
-        var newLookaheadList = List[Lookahead]
+        // fill in the next layer of branches and recurse
+        var newLookaheadList = List[Lookahead]()
         for (look <- lookaheadList) {
             if (look.actions.head != "submit") {
                 for (action <- List("improve", "ballot", "submit")) {
                     val (f_qNew, f_QPrimeNew, curBalNew):
-                    (QualityDistribution, QualityDistribution, Double) =  action match {
-                        case "improve" => improvement_job(look.f_Q, look.f_QPrime, look.curBalance)
-                        case "ballot" => ballot_job(look.f_Q, look.f_QPrime, look.curBalance)
-                        case "submit" => (look.f_Q, look.f_QPrime, look.curBalance)
+                    (QualityDistribution, QualityDistribution, Double) = action match {
+                        case "improve" =>
+                            improvement_job(look.f_Q, look.f_QPrime, look.curBalance)
+
+                        case "ballot" =>
+                            ballot_job(look.f_Q, look.f_QPrime, look.curBalance)
+
+                        case "submit" =>
+                            (look.f_Q, look.f_QPrime, look.curBalance)
+
                         case _ => throw new RuntimeException
                     }
                     val utility: Double = action match {
-                        case "improve" => utility_of_improvement_job(look.f_Q, look.f_QPrime)
-                        case "ballot" => utility_of_voting(look.f_Q, look.f_QPrime)
-                        case "submit" => utility_of_submitting(look.f_Q, look.f_QPrime)
+                        case "improve" =>
+                            utility_of_improvement_job(look.f_Q, look.f_QPrime)
+
+                        case "ballot" =>
+                            utility_of_voting(look.f_Q, look.f_QPrime)
+
+                        case "submit" =>
+                            utility_of_submitting(look.f_Q, look.f_QPrime)
                     }
-                    newLookaheadList ::= new Lookahead(action :: look.actions, f_qNew, f_QPrimeNew, utility, curBalNew)
+                    newLookaheadList ::= new Lookahead(
+                        action :: look.actions,
+                        f_qNew,
+                        f_QPrimeNew,
+                        utility,
+                        curBalNew)
                 }
             }
         }
+        look_ahead(newLookaheadList, currentDepth + 1)
     }
 
     def choose_action() {
         val artifactUtility    = utility_of_submitting()
-        val voteUtility        = utility_of_voting
+        val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
 
 //        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
@@ -373,7 +412,8 @@ case class Question() {
 }
 
 case class Lookahead(actions: List[String],
-                     f_Q: QualityDistribution, f_QPrime: QualityDistribution,
+                     f_Q: QualityDistribution,
+                     f_QPrime: QualityDistribution,
                      utility: Double,
                      curBalance: Double)
 
@@ -399,7 +439,7 @@ object FirstExperiment {
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 10.0
     val NUM_PARTICLES       = 1000
-    val UTILITY_OF_$$$      = 1.0  // let's just say it's "1" for simplicity
+    val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
     val qstn = Question()
 }
