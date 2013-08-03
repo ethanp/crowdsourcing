@@ -337,17 +337,18 @@ case class Question() {
     @tailrec
     final def look_ahead(lookaheadList: List[Lookahead] = List[Lookahead](),
                          currentDepth:  Int = 0) {
-        // all done, perform the first action from the highest performing sequence of actions:
         if (currentDepth == LOOKAHEAD_DEPTH) {
-            lookaheadList.foreach(route => println(route.actions.mkString(", ")))
+            // all done, perform the first action from the
+            // highest performing sequence of (affordable) actions:
             val bestRoute = lookaheadList.view
               .filter(_.curBalance > 0.0)
               .sortWith(_.utility > _.utility)
-              .head
-            println("Balance: " + bestRoute.curBalance)
-            execute_action(bestRoute.actions.last)
-        } else {
-            // fill in the next layer of branches and recurse
+              .head.actions.reverse
+
+            println(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
+            execute_action(bestRoute.head)
+        }
+        else { // fill in the next layer of branches and recurse
             var newLookaheadList = List[Lookahead]()
             if (!lookaheadList.isEmpty) {
                 for (route <- lookaheadList) {

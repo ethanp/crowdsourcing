@@ -4,7 +4,6 @@ import org.apache.commons.math3.distribution.NormalDistribution
 import scala.math._
 
 object FirstExperiment extends Exp {
-
     /* [DTC] gmX "follow a bell shaped distribution"
      *           "average error coefficient gm=1",
      *             where gmX > 0 */
@@ -40,7 +39,7 @@ trait Exp {
     val UTILITY_OF_$$$:      Double
 
 
-    def writeParameters(output: StringBuilder) = {
+    def writeParameters(output: StringBuilder): String = {
         output.append(
             WORKER_DIST.getMean + "\t" +
             WORKER_DIST.getStandardDeviation + "\t" +
@@ -53,7 +52,7 @@ trait Exp {
             INITIAL_ALLOWANCE   + "\t" +
             NUM_PARTICLES       + "\t" +
             UTILITY_OF_$$$      + "\t"
-        )
+        ).toString()
     }
 }
 
@@ -79,6 +78,7 @@ object Vary_Ballot_Cost extends App with Exp {
     val NUM_PARTICLES       = 100
     val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
     val qstn = Question()
+    qstn.state.output.write(writeParameters(new StringBuilder))
 
     println(writeParameters(new StringBuilder))
     while(true) qstn.look_ahead()
