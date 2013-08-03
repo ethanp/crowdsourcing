@@ -357,16 +357,12 @@ case class Question() {
 
                         case _ => throw new RuntimeException
                     }
-                    val utility: Double = action match {
-                        case "improve" =>
-                            utility_of_improvement_job(look.f_Q, look.f_QPrime)
+                    val utility: Double =
+                            max(
+                                convolute_Utility_with_Particles(f_qNew),
+                                convolute_Utility_with_Particles(f_QPrimeNew)
+                            ) - (look.curBalance - curBalNew * UTILITY_OF_$$$)
 
-                        case "ballot" =>
-                            utility_of_voting(look.f_Q, look.f_QPrime)
-
-                        case "submit" =>
-                            utility_of_submitting(look.f_Q, look.f_QPrime)
-                    }
                     newLookaheadList ::= new Lookahead(
                         action :: look.actions,
                         f_qNew,
