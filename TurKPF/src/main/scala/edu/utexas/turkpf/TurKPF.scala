@@ -251,11 +251,11 @@ case class Question() {
     def ballot_job(f_Q:      QualityDistribution,
                    f_QPrime: QualityDistribution,
                    balance:  Double,
-                   vote: Boolean = None):
+                   vote: Any = None):
     (QualityDistribution, QualityDistribution, Double) = {
-        val theVote = vote match {
+        val theVote: Boolean = vote match {
             case v if v == None => random < probability_of_yes_vote(f_Q, f_QPrime)
-            case v => v
+            case v => v.asInstanceOf[Boolean]
         }
         (dist_Q_after_vote(f_Q, f_QPrime)(theVote),
          dist_QPrime_after_vote(f_Q, f_QPrime)(theVote),
@@ -270,11 +270,13 @@ case class Question() {
      */
     def ballot_job(): Boolean = {
         val vote = random < probability_of_yes_vote()
-        printf("vote :: %s #L293\n\n", vote.toString.toUpperCase)
         state.votes ::= vote
+        printf("vote :: %s #L293\n\n", vote.toString.toUpperCase)
         println(state.votes.mkString("(",", ",")"))
-        (state.f_Q, state.f_QPrime, state.balance) =
-          ballot_job(state.f_Q, state.f_QPrime, state.balance, vote)
+        val newState   = ballot_job(state.f_Q, state.f_QPrime, state.balance, vote)
+        state.f_Q      = newState._1
+        state.f_QPrime = newState._2
+        state.balance  = newState._3
         vote
     }
 
@@ -308,13 +310,13 @@ case class Question() {
         // clear votes out
         wrkrs.updateGX(state.votes)
         state.votes = List[Boolean]()
-        (state.f_Q, state.f_QPrime, state.balance) =
-          improvement_job(state.f_Q, state.f_QPrime, state.balance)
+        val newState   = improvement_job(state.f_Q, state.f_QPrime, state.balance)
+        state.f_Q      = newState._1
+        state.f_QPrime = newState._2
+        state.balance  = newState._3
     }
 
-    /** TODO: Here's how the LookAhead might be implemented:
-      * GoDeeper( DataStruct, maxDepth, currentDepth ):
-      *   For Tuple in DataStruct:
+     /*   For Tuple in DataStruct:
       *     If Tuple doesn't end in a "submit":
       *       Replace that tuple with 3 new ones,
       *           1 for each action in [b,i,s],
@@ -322,57 +324,87 @@ case class Question() {
       * Sort the Tuples by utility and perform actionList.head.
       */
     @tailrec
-    final def look_ahead(lookaheadList: List[Lookahead],
-                   currentDepth:  Int) {
-
-        // all done, return the first action from the highest performing sequence of actions:
+    final def look_ahead(lookaheadList: List[Lookahead] = List[Lookahead](),
+                         currentDepth:  Int = 0) {
+        // all done, perform the first action from the highest performing sequence of actions:
         if (currentDepth == LOOKAHEAD_DEPTH) {
-            lookaheadList.sortWith(_.utility > _.utility).head.actions.head match {
+            val bestPath: List[String] = lookaheadList.sortWith(_.utility > _.utility).head.actions
+            println(bestPath.mkString("Best Path: ", ", ", ""))
+            bestPath.head match {
 
-                case "improve" => improvement_job()
+                case "improve" => {
+                    println("improvement")
+                    improvement_job()
+                }
 
-                case "ballot" => ballot_job()
+                case "ballot" => {
+                    println("ballot")
+                    ballot_job()
+                }
 
-                case "submit" => submit_final()
+                case "submit" => {
+                    println("submit")
+                    submit_final()
+                }
 
                 case _ => throw new RuntimeException
             }
         }
-
         // fill in the next layer of branches and recurse
         var newLookaheadList = List[Lookahead]()
-        for (look <- lookaheadList) {
-            if (look.actions.head != "submit") {
-                for (action <- List("improve", "ballot", "submit")) {
-                    val (f_qNew, f_QPrimeNew, curBalNew):
-                    (QualityDistribution, QualityDistribution, Double) = action match {
-                        case "improve" =>
-                            improvement_job(look.f_Q, look.f_QPrime, look.curBalance)
-
-                        case "ballot" =>
-                            ballot_job(look.f_Q, look.f_QPrime, look.curBalance)
-
-                        case "submit" =>
-                            (look.f_Q, look.f_QPrime, look.curBalance)
-
-                        case _ => throw new RuntimeException
-                    }
-                    val utility: Double =
-                            max(
-                                convolute_Utility_with_Particles(f_qNew),
-                                convolute_Utility_with_Particles(f_QPrimeNew)
-                            ) - (look.curBalance - curBalNew * UTILITY_OF_$$$)
-
-                    newLookaheadList ::= new Lookahead(
-                        action :: look.actions,
-                        f_qNew,
-                        f_QPrimeNew,
-                        utility,
-                        curBalNew)
-                }
+        if (!lookaheadList.isEmpty) {
+            for (look <- lookaheadList) {
+                newLookaheadList = go_deeper(look, newLookaheadList)
             }
         }
+        else {
+            newLookaheadList =
+                go_deeper(
+                    new Lookahead(
+                        List[String](),
+                        state.f_Q,
+                        state.f_Q,
+                        0,
+                        state.balance
+                    ),
+                  newLookaheadList
+                )
+        }
         look_ahead(newLookaheadList, currentDepth + 1)
+    }
+
+    def go_deeper(look: Lookahead, newLookaheadList: List[Lookahead]): List[Lookahead] = {
+        if (look.actions.isEmpty || look.actions.head != "submit") {
+            val anotherLayer: List[Lookahead] = List[String]("improve", "ballot", "submit") map { action =>
+                val (f_qNew, f_QPrimeNew, curBalNew):
+                (QualityDistribution, QualityDistribution, Double) = action match {
+                    case "improve" =>
+                        improvement_job(look.f_Q, look.f_QPrime, look.curBalance)
+
+                    case "ballot" =>
+                        ballot_job(look.f_Q, look.f_QPrime, look.curBalance)
+
+                    case "submit" =>
+                        (look.f_Q, look.f_QPrime, look.curBalance)
+
+                    case _ => throw new RuntimeException
+                }
+                val utility: Double =
+                    max(
+                        convolute_Utility_with_Particles(f_qNew),
+                        convolute_Utility_with_Particles(f_QPrimeNew)
+                    ) - (look.curBalance - curBalNew * UTILITY_OF_$$$)
+
+                new Lookahead(
+                    action :: look.actions,
+                    f_qNew,
+                    f_QPrimeNew,
+                    utility,
+                    curBalNew)
+            }
+            anotherLayer ::: newLookaheadList
+        }
+        else newLookaheadList
     }
 
     def choose_action() {
@@ -431,13 +463,14 @@ object FirstExperiment {
     val IMPROVEMENT_COST    = 3
     val BALLOT_COST         = .75
     val DIFFICULTY_CONSTANT = 0.5
-    val LOOKAHEAD_DEPTH     = 3  /* TODO: THE LookAhead */
+    val LOOKAHEAD_DEPTH     = 2  /* TODO: THE LookAhead */
     val NUM_QUESTIONS       = 10000
     val INITIAL_ALLOWANCE   = 10.0
-    val NUM_PARTICLES       = 1000
+    val NUM_PARTICLES       = 10
     val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
     val qstn = Question()
 }
 
-object TestStuff extends App { while(true) FirstExperiment.qstn.choose_action() }
+object choose_action extends App { while(true) FirstExperiment.qstn.choose_action() }
+object look_ahead extends App { while(true) FirstExperiment.qstn.look_ahead() }
