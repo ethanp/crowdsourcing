@@ -73,7 +73,7 @@ object Vary_Ballot_Cost extends App with Exp {
     val IMPROVEMENT_COST    = 3.0
     val BALLOT_COST         = .75
     val DIFFICULTY_CONSTANT = 0.5
-    val LOOKAHEAD_DEPTH     = 2
+    val LOOKAHEAD_DEPTH     = 3
     val NUM_QUESTIONS       = 10
     val INITIAL_ALLOWANCE   = 10.0
     val NUM_PARTICLES       = 100

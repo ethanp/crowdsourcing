@@ -24,7 +24,7 @@ import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment.experiment_parameters._  and so on  */
-import FirstExperiment._
+import Vary_Ballot_Cost._
 
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
@@ -345,20 +345,15 @@ case class Question() {
               .sortWith(_.utility > _.utility)
               .head
             println("Balance: " + bestRoute.curBalance)
-            println(bestRoute.actions.mkString("Best Path: ", ", ", ""))
-
-            /** TODO: this should be "last" instead of "head"
-              * at this point, I can't use "last" because then the best route
-              * always seems to be (submit, ballot), i.e. (ballot -> submit),
-              * which means it never actually terminates.
-              */
             execute_action(bestRoute.actions.last)
         } else {
             // fill in the next layer of branches and recurse
             var newLookaheadList = List[Lookahead]()
             if (!lookaheadList.isEmpty) {
                 for (route <- lookaheadList) {
-                    newLookaheadList = go_deeper(route, newLookaheadList)
+                    if (route.actions.head != "submit")
+                        newLookaheadList = go_deeper(route, newLookaheadList)
+                    else newLookaheadList ::= route
                 }
             }
             else newLookaheadList =
@@ -378,40 +373,37 @@ case class Question() {
     }}
 
     def go_deeper(route: Lookahead, newLookaheadList: List[Lookahead]): List[Lookahead] = {
-        if (route.actions.isEmpty || route.actions.head != "submit") {
-            val anotherLayer: List[Lookahead] = List("improve", "ballot", "submit") map { action =>
-                val (f_qNew, f_QPrimeNew, curBalNew):
-                (PF, PF, Double) = action match {
+        val anotherLayer: List[Lookahead] = List("improve", "ballot", "submit") map { action =>
+            val (f_qNew, f_QPrimeNew, curBalNew):
+            (PF, PF, Double) = action match {
 
-                    case "improve" =>
-                        improvement_job(route.f_Q, route.f_QPrime, route.curBalance)
+                case "improve" =>
+                    improvement_job(route.f_Q, route.f_QPrime, route.curBalance)
 
-                    case "ballot" =>
-                        ballot_job(route.f_Q, route.f_QPrime, route.curBalance)
+                case "ballot" =>
+                    ballot_job(route.f_Q, route.f_QPrime, route.curBalance)
 
-                    case "submit" =>
-                        (route.f_Q, route.f_QPrime, route.curBalance)
+                case "submit" =>
+                    (route.f_Q, route.f_QPrime, route.curBalance)
 
-                    case _ => throw new RuntimeException
+                case _ => throw new RuntimeException
 
-                }
-                val utility: Double = {
-                    max(
-                        convolute_Utility_with_Particles(f_qNew),
-                        convolute_Utility_with_Particles(f_QPrimeNew)
-                    ) - (route.curBalance - curBalNew * UTILITY_OF_$$$)
-                }
-
-                new Lookahead(
-                    action :: route.actions,
-                    f_qNew,
-                    f_QPrimeNew,
-                    utility,
-                    curBalNew)
             }
-            anotherLayer ::: newLookaheadList
+            val utility: Double = {
+                max(
+                    convolute_Utility_with_Particles(f_qNew),
+                    convolute_Utility_with_Particles(f_QPrimeNew)
+                ) - (route.curBalance - curBalNew * UTILITY_OF_$$$)
+            }
+
+            new Lookahead(
+                action :: route.actions,
+                f_qNew,
+                f_QPrimeNew,
+                utility,
+                curBalNew)
         }
-        else newLookaheadList
+        anotherLayer ::: newLookaheadList
     }
 
     def choose_action() {
