@@ -123,7 +123,7 @@ case class Workers(trueGX: Double) {
     }
 }
 
-case class QuestionState() {
+case class QuestionState(outFile: String) {
     var balance = INITIAL_ALLOWANCE
     var qlty = INITIAL_QUALITY
     var qltyPrime = 0.0
@@ -138,12 +138,12 @@ case class QuestionState() {
     var f_QPrime = new PF(
         new BetaDistribution(2,9).sample(NUM_PARTICLES)
     )
-    val output: FileWriter = new FileWriter("test.txt", true)
+    val output: FileWriter = new FileWriter(outFile, true)
 }
 
-case class Question(args: Set[String] = Set[String]()) {
+case class Question(args: Set[String] = Set[String](), outFile: String = "test.txt") {
 
-    val state = QuestionState()
+    val state = QuestionState(outFile)
 
     // [DTC] trueGX > 0; code is worker_dist-agnostic
     val wrkrs = Workers(state.workerTrueGm)
@@ -179,7 +179,6 @@ case class Question(args: Set[String] = Set[String]()) {
             state.output.write("2\t")
         if (args contains "finalUtil")
             state.output.write(finalUtility + "\t")
-        state.output.close()
         sys exit 0
     }
 
