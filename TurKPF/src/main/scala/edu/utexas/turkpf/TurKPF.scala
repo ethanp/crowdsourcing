@@ -10,11 +10,12 @@
 
 package edu.utexas.turkpf
 
-// TODO read it into an Excel and graph it at various levels of stuff
-// the first thing it prints each run should be a listing of the parameter values
-// then the values can be used to "join" the data within Excel
-// maybe the first value denotes which version of the program I'm running:
-//   { 0: choose_action(), 1: look_ahead() }
+// TODO the whole Args idea is pretty ugly:
+// This is how to accomplish this in Excel:
+//   Save the thing as a TSV, but store the actions as "001110002"
+//     so that they end up in one cell. DONE, but untested.
+//   Parse the actions with Excel if that's wanted
+//     Pg. 243 of the Excel 2010 Bible
 
 import java.io.FileWriter
 import math._
@@ -160,7 +161,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     // the math for this checks out
     def convolute_Utility_with_Particles(pf: PF):
-    Double = (0.0 /: pf.particles)(_ + estimate_artifact_utility(_)) / NUM_PARTICLES
+    Double = (0.0 /: pf.particles)(_ + UTILITY_FUNCTION(_)) / NUM_PARTICLES
 
     // [DTC] (eq. 12)
     def dStar: Double = {
@@ -175,8 +176,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         val finalUtility = utility_of_submitting() + state.balance * UTILITY_OF_$$$
         if (!args.contains("nostdout"))
             println("Final Utility: " + finalUtility)
-        if (args contains "actions")
-            state.output.write("2\t")
+        state.output.write("2\t")
         if (args contains "finalUtil")
             state.output.write(finalUtility + "\t")
         sys exit 0
@@ -235,7 +235,6 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                 sumB + prob_true_given_Qs(particleA, particleB)
             ) / NUM_PARTICLES
         ) / NUM_PARTICLES
-
     }
 
     // I checked and this function works properly
@@ -295,8 +294,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
-        if (args contains "actions")
-            state.output.write("1\t")
+        state.output.write("1")
         vote
     }
 
@@ -334,16 +332,16 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
-        if (args contains "actions")
-            state.output.write("0\t")
+        state.output.write("0")
     }
 
      /*   For Tuple in DataStruct:
       *     If Tuple doesn't end in a "submit":
       *       Replace that tuple with 3 new ones,
-      *           1 for each action in [b,i,s],
-      *           recalculating the utility
-      * Sort the New Tuples by utility and perform actionList.head.
+      *           1 for each action
+      *           recalculating the utility for each
+      * Sort the New Tuples by utility and
+      *   perform the first action in the best tuple.
       */
     @tailrec
     final def look_ahead(lookaheadList: List[Lookahead] = List[Lookahead](),
