@@ -1,6 +1,6 @@
 /**
  * Adapts TurKontrol into a Particle Filter
- * TurKontrol was presented in "Decision-Theoretic Control of Crowd-Sourced Workflows"
+ * TurKontrol as presented in "Decision-Theoretic Control of Crowd-Sourced Workflows"
  * by Peng Dai, Mausam, and Daniel S. Weld (2010)
  *
  * Author:          Ethan Petuchowski
@@ -10,12 +10,8 @@
 
 package edu.utexas.turkpf
 
-// TODO the whole Args idea is pretty ugly:
-// This is how to accomplish this in Excel:
-//   Save the thing as a TSV, but store the actions as "001110002"
-//     so that they end up in one cell. DONE, but untested.
-//   Parse the actions with Excel if that's wanted
-//     Pg. 243 of the Excel 2010 Bible
+// TODO Parse the actions with Excel:
+//   Pg. 243 of the Excel 2010 Bible
 
 import java.io.FileWriter
 import math._
@@ -353,13 +349,17 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
               .filter(_.curBalance > 0.0)
               .sortWith(_.utility > _.utility)
               .head.actions.reverse
+
             if (!args.contains("nostdout"))
                 println(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
+
             execute_action(bestRoute.head)
         }
-        else { // fill in the next layer of branches and recurse
+        else {
+            // fill in the next layer of branches and recurse
             var newLookaheadList = List[Lookahead]()
             if (!lookaheadList.isEmpty) {
+                // add layer to existing routes
                 for (route <- lookaheadList) {
                     if (route.actions.head != "submit")
                         newLookaheadList = go_deeper(route, newLookaheadList)
@@ -367,6 +367,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                 }
             }
             else newLookaheadList =
+                // create first layer of routes
                 go_deeper(
                     new Lookahead(List[String](), state.f_Q, state.f_QPrime, 0, state.balance),
                     newLookaheadList
@@ -382,7 +383,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         case _ => throw new RuntimeException
     }}
 
-    def go_deeper(route: Lookahead, newLookaheadList: List[Lookahead]): List[Lookahead] = {
+    def go_deeper(route:            Lookahead,
+                  newLookaheadList: List[Lookahead]):
+    List[Lookahead] = {
         val anotherLayer: List[Lookahead] = List("improve", "ballot", "submit") map { action =>
             val (f_qNew, f_QPrimeNew, curBalNew):
             (PF, PF, Double) = action match {
@@ -406,12 +409,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                 ) - (route.curBalance - curBalNew * UTILITY_OF_$$$)
             }
 
-            new Lookahead(
-                action :: route.actions,
-                f_qNew,
-                f_QPrimeNew,
-                utility,
-                curBalNew)
+            new Lookahead(action :: route.actions, f_qNew, f_QPrimeNew, utility, curBalNew)
         }
         anotherLayer ::: newLookaheadList
     }
@@ -437,6 +435,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         {
             if (!args.contains("nostdout"))
                 println("\n=> | IMPROVEMENT job |")
+
             improvement_job()
         }
         else if (voteUtility > artifactUtility
@@ -444,9 +443,11 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         {
             if (!args.contains("nostdout"))
                 println("\n=> | BALLOT job |")
+
             ballot_job()
         }
         else submit_final()
+
         if (!args.contains("nostdout"))
             println("\n\n****************************************************")
     }
