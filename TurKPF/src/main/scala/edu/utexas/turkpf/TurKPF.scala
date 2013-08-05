@@ -121,7 +121,7 @@ case class Workers(trueGX: Double) {
 }
 
 case class QuestionState(outFile: String) {
-    var balance = INITIAL_ALLOWANCE
+    var balance = INITIAL_BALANCE
     var qlty = INITIAL_QUALITY
     var qltyPrime = 0.0
     var votes = List[Boolean]()
@@ -175,7 +175,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         state.output.write("2\t")
         if (args contains "finalUtil")
             state.output.write(finalUtility + "\t")
-        sys exit 0
+//        sys exit 0
     }
 
     // [DTC] (top-right of page 4)
@@ -235,7 +235,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     // I checked and this function works properly
     def prob_true_given_Qs(q: Double, qPrime: Double): Double =
-        qstn.invertIfFalse(q < qPrime, wrkrs.accuracy(qstn.difficulty(q, qPrime)))
+        invertIfFalse(q < qPrime, wrkrs.accuracy(difficulty(q, qPrime)))
 
     def expVal_after_a_vote(f: Boolean => PF,
                             probYes: Double):
@@ -341,7 +341,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
       */
     @tailrec
     final def look_ahead(lookaheadList: List[Lookahead] = List[Lookahead](),
-                         currentDepth:  Int = 0) {
+                         currentDepth:  Int = 0):
+    Boolean = {
         if (currentDepth == LOOKAHEAD_DEPTH) {
             // all done, perform the first action from the
             // highest performing sequence of (affordable) actions:
@@ -376,12 +377,27 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         }
     }
 
-    def execute_action(action: String) { action match {
-        case "improve" => { if (!args.contains("nostdout")) println("improvement"); improvement_job() }
-        case "ballot" =>  { if (!args.contains("nostdout")) println("ballot");      ballot_job()      }
-        case "submit" =>  { if (!args.contains("nostdout")) println("submit");      submit_final()    }
-        case _ => throw new RuntimeException
-    }}
+    def execute_action(action: String): Boolean = {
+        val print = !args.contains("nostdout")
+        action match {
+            case "improve" => {
+                if (print) println("improvement")
+                improvement_job()
+                true
+            }
+            case "ballot" =>  {
+                if (print) println("ballot")
+                ballot_job()
+                true
+            }
+            case "submit" =>  {
+                if (print) println("submit")
+                submit_final()
+                false
+            }
+            case _ => throw new RuntimeException
+        }
+    }
 
     def go_deeper(route:            Lookahead,
                   newLookaheadList: List[Lookahead]):
@@ -414,12 +430,15 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         anotherLayer ::: newLookaheadList
     }
 
-    def choose_action() {
+    def choose_action(): Boolean = {
         val artifactUtility    = utility_of_submitting()
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
+        val print = !args.contains("nostdout")
+        val printEnd = if (print)
+            println("\n\n****************************************************")
 
-        if (!args.contains("nostdout")) {
+        if (print) {
             //        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
             println("current balance     " + state.balance)
     //        println("artifactUtility:    " + artifactUtility)
@@ -433,23 +452,20 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
           && improvementUtility > artifactUtility
           && state.balance > IMPROVEMENT_COST)
         {
-            if (!args.contains("nostdout"))
+            if (print)
                 println("\n=> | IMPROVEMENT job |")
 
-            improvement_job()
+            improvement_job(); printEnd; true
         }
         else if (voteUtility > artifactUtility
                && state.balance > BALLOT_COST)
         {
-            if (!args.contains("nostdout"))
+            if (print)
                 println("\n=> | BALLOT job |")
 
-            ballot_job()
+            ballot_job(); printEnd; true
         }
-        else submit_final()
-
-        if (!args.contains("nostdout"))
-            println("\n\n****************************************************")
+        else { submit_final(); false }
     }
 }
 

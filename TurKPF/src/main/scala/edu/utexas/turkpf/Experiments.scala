@@ -26,7 +26,7 @@ trait Exp {
     val DIFFICULTY_CONSTANT = 0.5
     val LOOKAHEAD_DEPTH     = 2
     val NUM_QUESTIONS       = 10
-    val INITIAL_ALLOWANCE   = 10.0
+    val INITIAL_BALANCE   = 10.0
     val NUM_PARTICLES       = 100
     val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
@@ -39,9 +39,29 @@ trait Exp {
           DIFFICULTY_CONSTANT + "\t" +
           LOOKAHEAD_DEPTH     + "\t" +
           NUM_QUESTIONS       + "\t" +
-          INITIAL_ALLOWANCE   + "\t" +
+          INITIAL_BALANCE     + "\t" +
           NUM_PARTICLES       + "\t" +
           UTILITY_OF_$$$      + "\t"
+    }
+    var n = 0
+    def continue: Boolean = {
+        n += 1
+        n < NUM_QUESTIONS
+    }
+    def lookahead(outFile: String = "test.txt") {
+        while (continue){
+            val qstn = Question(outFile = outFile)
+            qstn.state.output.write(parametersAsString)
+            qstn.state.output.write(EXP_LOOKAHEAD)
+            while(qstn.look_ahead()){}
+            qstn.state.output.write("\n")
+            qstn.state.output.close()  // first flushes, then closes.
+        }
+    }
+    def chooseAction(qstn: Question) {
+        while (continue){
+            while (qstn.choose_action()){}
+        }
     }
 }
 
@@ -50,11 +70,6 @@ object FirstExperiment extends Exp { val qstn = Question(/* default args */) }
 object Test_FirstExperiment extends App { println(FirstExperiment.parametersAsString) }
 
 object Vary_Ballot_Cost extends App with Exp {
-    val qstn = Question(args = Set("finalUtil"), outFile = "test.txt")
-    qstn.state.output.write(parametersAsString)
-    qstn.state.output.write(EXP_LOOKAHEAD)
-    while(true) qstn.look_ahead()
-    qstn.state.output.write("\n")
-    qstn.state.output.close()  // first flushes, then closes.
+    lookahead("test.txt")
 }
 
