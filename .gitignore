@@ -2,4 +2,5 @@
 *.iml
 TurKPF/sbt-development
 TurKPF/sbt-production
-TurKPF/test.txt
+TurKPF/*.txt
+TurKPF/*.tsv

@@ -89,13 +89,14 @@ case class PF(numParticles: Int, particles: Array[Double]) {
         particles(particles.length-1)
     }
 
-    implicit def addNorm(a: Array[Double]):
-        addNorm = new addNorm(a) {
+    implicit def addNorm(a: Array[Double]): addNorm = {
+        new addNorm(a) {
             def normalize = {
                 val norm = a.sum
                 a map {_/norm}
             }
         }
+    }
 }
 
 /* model all workers with just one worker-independent model */
@@ -152,6 +153,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     val state = QuestionState(outFile)
 
+    val print = !args.contains("nostdout")
+    def ifPrintln(s: String) { println(s) }
+
     // [DTC] trueGX > 0; code is worker_dist-agnostic
     val wrkrs = Workers(state)
 
@@ -167,8 +171,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     def submit_final() = {
         val finalUtility = utility_of_submitting() + state.balance * exper.UTILITY_OF_$$$
-        if (!args.contains("nostdout"))
-            println("Final Utility: " + finalUtility)
+        ifPrintln("Final Utility: " + finalUtility)
         state.output.write("2\t")
         state.output.write(finalUtility + "\n")
         state.output.close()
@@ -189,12 +192,12 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     (Double, Double) = {
         val orig_predicted = convolute_Utility_with_Particles(f_Q.predict)
         val prime_predicted = convolute_Utility_with_Particles(f_QPrime.predict)
-        if (!args.contains("nostdout")) {
+        ifPrintln({
             if (f_Q == state.f_Q) {
-                println("Predicted Original Utility:   " + orig_predicted)
-                println("Predicted Prime Utility:      " + prime_predicted)
-            }
-        }
+                "Predicted Original Utility:   " + orig_predicted
+                "Predicted Prime Utility:      " + prime_predicted
+            } else ""
+        })
         (orig_predicted, prime_predicted)
     }
 
@@ -204,8 +207,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                           f_QPrime: PF = state.f_QPrime):
     Double = {
         val probYes = probability_of_yes_vote(f_Q, f_QPrime)
-        if (!args.contains("nostdout"))
-            println("probYes: " + probYes)
+        ifPrintln("probYes: " + probYes)
         max(
             expVal_after_a_vote(dist_Q_after_vote(f_Q, f_QPrime), probYes),
             expVal_after_a_vote(dist_QPrime_after_vote(f_Q, f_QPrime), probYes)
@@ -279,10 +281,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def ballot_job(): Boolean = {
         val vote = random < probability_of_yes_vote()
         state.votes ::= vote
-        if (!args.contains("nostdout"))
-            printf("vote :: %s #L293\n\n", vote.toString.toUpperCase)
-        if (!args.contains("nostdout"))
-            println(state.votes.reverse.mkString("(",", ",")"))
+        ifPrintln("vote :: "+vote.toString.toUpperCase+" #L293\n")
+        ifPrintln(state.votes.reverse.mkString("(",", ",")"))
         val newState   = ballot_job(state.f_Q, state.f_QPrime, state.balance, vote)
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
@@ -348,8 +348,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
               .sortWith(_.utility > _.utility)
               .head.actions.reverse
 
-            if (!args.contains("nostdout"))
-                println(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
+            ifPrintln(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
 
             execute_action(bestRoute.head)
         }
@@ -375,20 +374,19 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     }
 
     def execute_action(action: String): Boolean = {
-        val print = !args.contains("nostdout")
         action match {
             case "improve" => {
-                if (print) println("improvement")
+                ifPrintln("improvement")
                 improvement_job()
                 true
             }
             case "ballot" =>  {
-                if (print) println("ballot")
+                ifPrintln("ballot")
                 ballot_job()
                 true
             }
             case "submit" =>  {
-                if (print) println("submit")
+                ifPrintln("submit")
                 submit_final()
                 false
             }
@@ -432,8 +430,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
 
-        val print = !args.contains("nostdout")
-        def printEnd() = if (print) println("\n\n****************************************************")
+        def printEnd() = ifPrintln("\n\n****************************************************")
 
         if (print) {
             //        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
@@ -449,16 +446,14 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
           && improvementUtility > artifactUtility
           && state.balance > exper.IMPROVEMENT_COST)
         {
-            if (print)
-                println("\n=> | IMPROVEMENT job |")
+            ifPrintln("\n=> | IMPROVEMENT job |")
 
             improvement_job(); printEnd(); true
         }
         else if (voteUtility > artifactUtility
                && state.balance > exper.BALLOT_COST)
         {
-            if (print)
-                println("\n=> | BALLOT job |")
+            ifPrintln("\n=> | BALLOT job |")
 
             ballot_job(); printEnd(); true
         }

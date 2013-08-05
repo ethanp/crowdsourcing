@@ -52,21 +52,16 @@ object FirstExperiment extends App { val qstn = Question(/* default args */) }
 object Vary_Ballot_Cost extends App {
     val exper = Exp()
     val runner = Runnit(exper)
-    runner.run("test.txt", exper.EXP_LOOKAHEAD)
+    runner.run("test.tsv", exper.EXP_LOOKAHEAD)
 }
 
 case class Runnit(exper: Exp) {
-    var n = 0
     var qstn = Question()
-    def continue: Boolean = {
-        n += 1
-        n < exper.NUM_QUESTIONS
-    }
     def run(outFile: String = "test.txt", mode: String = "1\t") {
-        while (continue) {
+        for (i <- 1 to exper.NUM_QUESTIONS) {
             qstn = Question(outFile = outFile)
-            qstn.state.output.write(exper.parametersAsString)
             qstn.state.output.write(mode)
+            qstn.state.output.write(exper.parametersAsString)
             if (mode == exper.EXP_CHOOSEACTION)
                 while(qstn.choose_action()){}
             else while(qstn.look_ahead()){}
