@@ -31,13 +31,13 @@ case class PF(numParticles: Int, particles: Array[Double]) {
 
     def this(n: Int) = this(n, new BetaDistribution(1,9).sample(n))
 
-    def this(particles: Array[Double]) = this(NUM_PARTICLES, particles)
+    def this(particles: Array[Double]) = this(exper.NUM_PARTICLES, particles)
 
-    def this() = this(NUM_PARTICLES, new BetaDistribution(1,9).sample(NUM_PARTICLES))
+    def this() = this(exper.NUM_PARTICLES, new BetaDistribution(1,9).sample(exper.NUM_PARTICLES))
 
     // [DTC] (eq. 13)
     def find_improvementFunctionMean(qlty: Double): Double = {
-        val accuracy: Double = qstn.wrkrs.accuracy(qlty)
+        val accuracy: Double = runner.qstn.wrkrs.accuracy(qlty)
         qlty + 0.5 * ((1 - qlty) * (accuracy - 0.5) + qlty * (accuracy - 1))
     }
 
@@ -65,7 +65,7 @@ case class PF(numParticles: Int, particles: Array[Double]) {
             this.particles map { partA =>
                 (0.0 /: that.particles)((sum, partB) => {
                     val (p1, p2) = if (prime) (partB, partA) else (partA, partB)
-                    sum + qstn.invertIfFalse(vote, qstn.prob_true_given_Qs(p1, p2))
+                    sum + runner.qstn.invertIfFalse(vote, runner.qstn.prob_true_given_Qs(p1, p2))
                 })
             }}.normalize
 
@@ -106,7 +106,7 @@ case class Workers(state: QuestionState) {
     // [DTC] (eq. 2)
     def difficulty(qlty:      Double,
                    qltyPrime: Double):
-    Double = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
+    Double = 1 - pow((qlty - qltyPrime).abs, exper.DIFFICULTY_CONSTANT)
 
     // [DTC] (eq. 12)
     def dStar: Double = {
@@ -114,7 +114,7 @@ case class Workers(state: QuestionState) {
             sum + (0.0 /: state.f_QPrime.particles)((sum2, qPrime) =>
                 sum2 + difficulty(q, state.qltyPrime)
             )
-        ) / (NUM_PARTICLES * NUM_PARTICLES)
+        ) / (exper.NUM_PARTICLES * exper.NUM_PARTICLES)
     }
 
     // higher GX means Worse worker
@@ -124,27 +124,26 @@ case class Workers(state: QuestionState) {
         val bigger  = if (trueBigger) trues.length  else falses.length
         val smaller = if (trueBigger) falses.length else trues.length
         val d = dStar
-        state.estGX -= bigger * d * LEARNING_RATE
-        state.estGX += smaller * (1 - d) * LEARNING_RATE
+        state.estGX -= bigger * d * exper.LEARNING_RATE
+        state.estGX += smaller * (1 - d) * exper.LEARNING_RATE
     }
 }
 
 case class QuestionState(outFile: String) {
     var estGX = 1.0  // set to the mean of the true distribution
                      // could be altered to test robustness
-    var balance = INITIAL_BALANCE
-    var qlty = INITIAL_QUALITY
+    var balance = exper.INITIAL_BALANCE
+    var qlty = exper.INITIAL_QUALITY
     var qltyPrime = 0.0
     var votes = List[Boolean]()
-    var workerTrueGm = WORKER_DIST.sample
-    while (workerTrueGm < 0) workerTrueGm = WORKER_DIST.sample
+    var workerTrueGm = exper.WORKER_DIST.sample
+    while (workerTrueGm < 0) workerTrueGm = exper.WORKER_DIST.sample
     var f_Q = new PF  // defaults to BetaDist(1,9)
 
     // [DTC] § Experimental Setup
-    // my goal here is to initialize the qPrime prior a little higher than the q prior
-    // a better way to do this would be nice
+    // initialize the qPrime prior a little higher than the q prior
     var f_QPrime = new PF(
-        new BetaDistribution(2,9).sample(NUM_PARTICLES)
+        new BetaDistribution(2,9).sample(exper.NUM_PARTICLES)
     )
     val output: FileWriter = new FileWriter(outFile, true)
 }
@@ -163,16 +162,16 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     // the math for this checks out
     def convolute_Utility_with_Particles(pf: PF):
-    Double = (0.0 /: pf.particles)(_ + UTILITY_FUNCTION(_)) / NUM_PARTICLES
+    Double = (0.0 /: pf.particles)(_ + exper.UTILITY_FUNCTION(_)) / exper.NUM_PARTICLES
 
 
     def submit_final() = {
-        val finalUtility = utility_of_submitting() + state.balance * UTILITY_OF_$$$
+        val finalUtility = utility_of_submitting() + state.balance * exper.UTILITY_OF_$$$
         if (!args.contains("nostdout"))
             println("Final Utility: " + finalUtility)
         state.output.write("2\t")
-        if (args contains "finalUtil")
-            state.output.write(finalUtility + "\t")
+        state.output.write(finalUtility + "\n")
+        state.output.close()
 //        sys exit 0
     }
 
@@ -181,7 +180,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                                    f_QPrime: PF = state.f_QPrime):
     Double = {
         val (orig_predicted, prime_predicted) = utility_of_stopping_voting(f_Q, f_QPrime)
-        max(orig_predicted, prime_predicted) - IMPROVEMENT_COST * UTILITY_OF_$$$
+        max(orig_predicted, prime_predicted) - exper.IMPROVEMENT_COST * exper.UTILITY_OF_$$$
     }
 
     // [DTC] (eq. 9)
@@ -210,7 +209,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         max(
             expVal_after_a_vote(dist_Q_after_vote(f_Q, f_QPrime), probYes),
             expVal_after_a_vote(dist_QPrime_after_vote(f_Q, f_QPrime), probYes)
-        ) - BALLOT_COST * UTILITY_OF_$$$
+        ) - exper.BALLOT_COST * exper.UTILITY_OF_$$$
     }
 
     // [DTC] (bottom-left Pg. 4)
@@ -227,8 +226,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         (0.0 /: f_Q.particles)((sumA, particleA) =>
             sumA + particleA * (0.0 /: f_QPrime.particles)((sumB, particleB) =>
                 sumB + prob_true_given_Qs(particleA, particleB)
-            ) / NUM_PARTICLES
-        ) / NUM_PARTICLES
+            ) / exper.NUM_PARTICLES
+        ) / exper.NUM_PARTICLES
     }
 
     // I checked and this function works properly
@@ -268,7 +267,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         }
         (dist_Q_after_vote(f_Q, f_QPrime)(theVote),
          dist_QPrime_after_vote(f_Q, f_QPrime)(theVote),
-         balance - BALLOT_COST)
+         balance - exper.BALLOT_COST)
     }
 
     /**
@@ -292,8 +291,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         vote
     }
 
-
     def invertIfFalse(t: Boolean, v: Double): Double = if (t) v else 1-v
+
     /****************************** END BALLOT JOB STUFF **************************/
 
     /*
@@ -315,7 +314,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             else
                 imprvF_QPrime
         }
-        (newF_Q_of_q, newF_Q_of_q.predict, balance - IMPROVEMENT_COST)
+        (newF_Q_of_q, newF_Q_of_q.predict, balance - exper.IMPROVEMENT_COST)
     }
 
     def improvement_job() {
@@ -341,7 +340,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     final def look_ahead(lookaheadList: List[Lookahead] = List[Lookahead](),
                          currentDepth:  Int = 0):
     Boolean = {
-        if (currentDepth == LOOKAHEAD_DEPTH) {
+        if (currentDepth == exper.LOOKAHEAD_DEPTH) {
             // all done, perform the first action from the
             // highest performing sequence of (affordable) actions:
             val bestRoute = lookaheadList.view
@@ -420,7 +419,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                 max(
                     convolute_Utility_with_Particles(f_qNew),
                     convolute_Utility_with_Particles(f_QPrimeNew)
-                ) - (route.curBalance - curBalNew * UTILITY_OF_$$$)
+                ) - (route.curBalance - curBalNew * exper.UTILITY_OF_$$$)
             }
 
             new Lookahead(action :: route.actions, f_qNew, f_QPrimeNew, utility, curBalNew)
@@ -432,9 +431,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         val artifactUtility    = utility_of_submitting()
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
+
         val print = !args.contains("nostdout")
-        val printEnd = if (print)
-            println("\n\n****************************************************")
+        def printEnd() = if (print) println("\n\n****************************************************")
 
         if (print) {
             //        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
@@ -448,20 +447,20 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
         if (improvementUtility > voteUtility
           && improvementUtility > artifactUtility
-          && state.balance > IMPROVEMENT_COST)
+          && state.balance > exper.IMPROVEMENT_COST)
         {
             if (print)
                 println("\n=> | IMPROVEMENT job |")
 
-            improvement_job(); printEnd; true
+            improvement_job(); printEnd(); true
         }
         else if (voteUtility > artifactUtility
-               && state.balance > BALLOT_COST)
+               && state.balance > exper.BALLOT_COST)
         {
             if (print)
                 println("\n=> | BALLOT job |")
 
-            ballot_job(); printEnd; true
+            ballot_job(); printEnd(); true
         }
         else { submit_final(); false }
     }

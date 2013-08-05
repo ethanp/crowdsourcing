@@ -3,9 +3,9 @@ package edu.utexas.turkpf
 import org.apache.commons.math3.distribution.NormalDistribution
 import scala.math._
 
-abstract class Exp {
+case class Exp() {
 
-    // operational constants
+    // enum
     val EXP_CHOOSEACTION = "0\t"
     val EXP_LOOKAHEAD    = "1\t"
 
@@ -45,30 +45,31 @@ abstract class Exp {
           LEARNING_RATE       + "\t" +
           UTILITY_OF_$$$      + "\t"
     }
+}
+
+object FirstExperiment extends App { val qstn = Question(/* default args */) }
+
+object Vary_Ballot_Cost extends App {
+    val exper = Exp()
+    val runner = Runnit(exper)
+    runner.run("test.txt", exper.EXP_LOOKAHEAD)
+}
+
+case class Runnit(exper: Exp) {
     var n = 0
+    var qstn = Question()
     def continue: Boolean = {
         n += 1
-        n < NUM_QUESTIONS
+        n < exper.NUM_QUESTIONS
     }
     def run(outFile: String = "test.txt", mode: String = "1\t") {
         while (continue) {
-            val qstn = Question(outFile = outFile)
-            qstn.state.output.write(parametersAsString)
+            qstn = Question(outFile = outFile)
+            qstn.state.output.write(exper.parametersAsString)
             qstn.state.output.write(mode)
-            if (mode == EXP_CHOOSEACTION)
+            if (mode == exper.EXP_CHOOSEACTION)
                 while(qstn.choose_action()){}
             else while(qstn.look_ahead()){}
-            qstn.state.output.write("\n")
-            qstn.state.output.close()  // first flushes, then closes.
         }
     }
 }
-
-object FirstExperiment extends Exp { val qstn = Question(/* default args */) }
-
-object Test_FirstExperiment extends App { println(FirstExperiment.parametersAsString) }
-
-object Vary_Ballot_Cost extends Exp with App {
-    run("test.txt", EXP_LOOKAHEAD)
-}
-
