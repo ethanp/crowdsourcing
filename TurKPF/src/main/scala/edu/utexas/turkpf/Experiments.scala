@@ -3,7 +3,7 @@ package edu.utexas.turkpf
 import org.apache.commons.math3.distribution.NormalDistribution
 import scala.math._
 
-trait Exp {
+abstract class Exp {
 
     // operational constants
     val EXP_CHOOSEACTION = "0\t"
@@ -26,8 +26,9 @@ trait Exp {
     val DIFFICULTY_CONSTANT = 0.5
     val LOOKAHEAD_DEPTH     = 2
     val NUM_QUESTIONS       = 10
-    val INITIAL_BALANCE   = 10.0
+    val INITIAL_BALANCE     = 10.0
     val NUM_PARTICLES       = 100
+    val LEARNING_RATE       = 0.05
     val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
     def parametersAsString: String = {
@@ -41,6 +42,7 @@ trait Exp {
           NUM_QUESTIONS       + "\t" +
           INITIAL_BALANCE     + "\t" +
           NUM_PARTICLES       + "\t" +
+          LEARNING_RATE       + "\t" +
           UTILITY_OF_$$$      + "\t"
     }
     var n = 0
@@ -48,19 +50,16 @@ trait Exp {
         n += 1
         n < NUM_QUESTIONS
     }
-    def lookahead(outFile: String = "test.txt") {
-        while (continue){
+    def run(outFile: String = "test.txt", mode: String = "1\t") {
+        while (continue) {
             val qstn = Question(outFile = outFile)
             qstn.state.output.write(parametersAsString)
-            qstn.state.output.write(EXP_LOOKAHEAD)
-            while(qstn.look_ahead()){}
+            qstn.state.output.write(mode)
+            if (mode == EXP_CHOOSEACTION)
+                while(qstn.choose_action()){}
+            else while(qstn.look_ahead()){}
             qstn.state.output.write("\n")
             qstn.state.output.close()  // first flushes, then closes.
-        }
-    }
-    def chooseAction(qstn: Question) {
-        while (continue){
-            while (qstn.choose_action()){}
         }
     }
 }
@@ -69,7 +68,7 @@ object FirstExperiment extends Exp { val qstn = Question(/* default args */) }
 
 object Test_FirstExperiment extends App { println(FirstExperiment.parametersAsString) }
 
-object Vary_Ballot_Cost extends App with Exp {
-    lookahead("test.txt")
+object Vary_Ballot_Cost extends Exp with App {
+    run("test.txt", EXP_LOOKAHEAD)
 }
 

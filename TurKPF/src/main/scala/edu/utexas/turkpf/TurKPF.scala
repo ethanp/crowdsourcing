@@ -23,7 +23,6 @@ import scala.util.Random
  *  import SecondExperiment.experiment_parameters._  and so on  */
 import Vary_Ballot_Cost._
 
-
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
 
@@ -100,13 +99,23 @@ case class PF(numParticles: Int, particles: Array[Double]) {
 }
 
 /* model all workers with just one worker-independent model */
-case class Workers(trueGX: Double) {
-    val LEARNING_RATE = 0.05
-    var estGX = 1.0  // set to the mean of the true distribution
-                     // could be altered to test robustness
-
+case class Workers(state: QuestionState) {
     // [DTC] (above eq. 3)
-    def accuracy(difficulty: Double) = 0.5 * (1 + pow(1 - difficulty, estGX))
+    def accuracy(difficulty: Double) = 0.5 * (1 + pow(1 - difficulty, state.estGX))
+
+    // [DTC] (eq. 2)
+    def difficulty(qlty:      Double,
+                   qltyPrime: Double):
+    Double = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
+
+    // [DTC] (eq. 12)
+    def dStar: Double = {
+        (0.0 /: state.f_Q.particles)((sum, q) =>
+            sum + (0.0 /: state.f_QPrime.particles)((sum2, qPrime) =>
+                sum2 + difficulty(q, state.qltyPrime)
+            )
+        ) / (NUM_PARTICLES * NUM_PARTICLES)
+    }
 
     // higher GX means Worse worker
     def updateGX(votes: List[Boolean]) {    // [DTC] (below eq. 12)
@@ -114,13 +123,15 @@ case class Workers(trueGX: Double) {
         val trueBigger = trues.length > falses.length
         val bigger  = if (trueBigger) trues.length  else falses.length
         val smaller = if (trueBigger) falses.length else trues.length
-        val d = qstn.dStar
-        estGX -= bigger * d * LEARNING_RATE
-        estGX += smaller * (1 - d) * LEARNING_RATE
+        val d = dStar
+        state.estGX -= bigger * d * LEARNING_RATE
+        state.estGX += smaller * (1 - d) * LEARNING_RATE
     }
 }
 
 case class QuestionState(outFile: String) {
+    var estGX = 1.0  // set to the mean of the true distribution
+                     // could be altered to test robustness
     var balance = INITIAL_BALANCE
     var qlty = INITIAL_QUALITY
     var qltyPrime = 0.0
@@ -143,12 +154,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     val state = QuestionState(outFile)
 
     // [DTC] trueGX > 0; code is worker_dist-agnostic
-    val wrkrs = Workers(state.workerTrueGm)
-
-    // [DTC] (eq. 2)
-    def difficulty(qlty:      Double,
-                   qltyPrime: Double):
-    Double = 1 - pow((qlty - qltyPrime).abs, DIFFICULTY_CONSTANT)
+    val wrkrs = Workers(state)
 
     def utility_of_submitting(f_Q:      PF = state.f_Q,
                               f_QPrime: PF = state.f_QPrime):
@@ -159,14 +165,6 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def convolute_Utility_with_Particles(pf: PF):
     Double = (0.0 /: pf.particles)(_ + UTILITY_FUNCTION(_)) / NUM_PARTICLES
 
-    // [DTC] (eq. 12)
-    def dStar: Double = {
-        (0.0 /: state.f_Q.particles)((sum, q) =>
-            sum + (0.0 /: state.f_QPrime.particles)((sum2, qPrime) =>
-                sum2 + difficulty(q, state.qltyPrime)
-            )
-        ) / (NUM_PARTICLES * NUM_PARTICLES)
-    }
 
     def submit_final() = {
         val finalUtility = utility_of_submitting() + state.balance * UTILITY_OF_$$$
@@ -235,7 +233,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     // I checked and this function works properly
     def prob_true_given_Qs(q: Double, qPrime: Double): Double =
-        invertIfFalse(q < qPrime, wrkrs.accuracy(difficulty(q, qPrime)))
+        invertIfFalse(q < qPrime, wrkrs.accuracy(wrkrs.difficulty(q, qPrime)))
 
     def expVal_after_a_vote(f: Boolean => PF,
                             probYes: Double):
