@@ -50,18 +50,18 @@ case class Exp() {
     }
 
     def parametersAsString: String = {
-        WORKER_DIST.getMean   + "\t" +
-        WORKER_DIST.getStandardDeviation + "\t" +
-        INITIAL_QUALITY     + "\t" +
-        IMPROVEMENT_COST    + "\t" +
-        BALLOT_COST         + "\t" +
-        DIFFICULTY_CONSTANT + "\t" +
-        LOOKAHEAD_DEPTH     + "\t" +
-        NUM_QUESTIONS       + "\t" +
-        INITIAL_BALANCE     + "\t" +
-        NUM_PARTICLES       + "\t" +
-        LEARNING_RATE       + "\t" +
-        UTILITY_OF_$$$      + "\t"
+        s"${WORKER_DIST.getMean}\t" +
+        s"${WORKER_DIST.getStandardDeviation}\t" +
+        s"$INITIAL_QUALITY\t" +
+        s"$IMPROVEMENT_COST\t" +
+        s"$BALLOT_COST\t" +
+        s"$DIFFICULTY_CONSTANT\t" +
+        s"$LOOKAHEAD_DEPTH\t" +
+        s"$NUM_QUESTIONS\t" +
+        s"$INITIAL_BALANCE\t" +
+        s"$NUM_PARTICLES\t" +
+        s"$LEARNING_RATE\t" +
+        s"${UTILITY_OF_$$$}\t"
     }
 }
 

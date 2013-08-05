@@ -170,9 +170,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     def submit_final() = {
         val finalUtility = utility_of_submitting() + state.balance * exper.UTILITY_OF_$$$
-        ifPrintln("Final Utility: " + finalUtility)
+        ifPrintln(f"Final Utility: $finalUtility%.2f")
         state.output.write("2\t")
-        state.output.write(finalUtility + "\n")
+        state.output.write(f"$finalUtility%.2f\n")
         state.output.close()
 //        sys exit 0
     }
@@ -193,8 +193,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         val prime_predicted = convolute_Utility_with_Particles(f_QPrime.predict)
         ifPrintln({
             if (f_Q == state.f_Q) {
-                "Predicted Original Utility:   " + orig_predicted
-                "Predicted Prime Utility:      " + prime_predicted
+                s"Predicted Original Utility:   $orig_predicted" +
+                s"Predicted Prime Utility:      $prime_predicted"
             } else ""
         })
         (orig_predicted, prime_predicted)
@@ -206,7 +206,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                           f_QPrime: PF = state.f_QPrime):
     Double = {
         val probYes = probability_of_yes_vote(f_Q, f_QPrime)
-        ifPrintln("probYes: " + probYes)
+        ifPrintln(s"probYes: $probYes")
         max(
             expVal_after_a_vote(dist_Q_after_vote(f_Q, f_QPrime), probYes),
             expVal_after_a_vote(dist_QPrime_after_vote(f_Q, f_QPrime), probYes)
@@ -280,7 +280,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def ballot_job(): Boolean = {
         val vote = random < probability_of_yes_vote()
         state.votes ::= vote
-        ifPrintln("vote :: "+vote.toString.toUpperCase+" #L293\n")
+        ifPrintln(s"vote :: ${vote.toString.toUpperCase} #L293\n")
         ifPrintln(state.votes.reverse.mkString("(",", ",")"))
         val newState   = ballot_job(state.f_Q, state.f_QPrime, state.balance, vote)
         state.f_Q      = newState._1
@@ -433,12 +433,12 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
         if (print) {
             //        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
-            println("current balance     " + state.balance)
+            println(s"current balance:     ${state.balance}")
     //        println("artifactUtility:    " + artifactUtility)
     //        println("voteUtility:        " + voteUtility)
     //        println("improvementUtility: " + improvementUtility)
-            println("Predicted Original Utility:   " + convolute_Utility_with_Particles(state.f_Q))
-            println("Predicted Prime Utility:      " + convolute_Utility_with_Particles(state.f_QPrime))
+            println(s"Predicted Original Utility:   ${convolute_Utility_with_Particles(state.f_Q)}")
+            println(s"Predicted Prime Utility:      ${convolute_Utility_with_Particles(state.f_QPrime)}")
         }
 
         if (improvementUtility > voteUtility
