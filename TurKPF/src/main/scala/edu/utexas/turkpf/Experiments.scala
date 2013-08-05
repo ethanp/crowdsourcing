@@ -31,19 +31,37 @@ case class Exp() {
     val LEARNING_RATE       = 0.05
     val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
+    def columnTitles: String = {
+        "mode\t"                  +
+        "worker dist mean\t"      +
+        "worker dist stdev\t"     +
+        "initial quality\t"       +
+        "improvement cost\t"      +
+        "ballot cost\t"           +
+        "difficulty constant\t"   +
+        "lookahead depth\t"       +
+        "num questions\t"         +
+        "initial balance\t"       +
+        "num particles\t"         +
+        "learning rate\t"         +
+        "utility of $$$\t"        +
+        "action list\t"           +
+        "final utility\n"
+    }
+
     def parametersAsString: String = {
         WORKER_DIST.getMean   + "\t" +
-          WORKER_DIST.getStandardDeviation + "\t" +
-          INITIAL_QUALITY     + "\t" +
-          IMPROVEMENT_COST    + "\t" +
-          BALLOT_COST         + "\t" +
-          DIFFICULTY_CONSTANT + "\t" +
-          LOOKAHEAD_DEPTH     + "\t" +
-          NUM_QUESTIONS       + "\t" +
-          INITIAL_BALANCE     + "\t" +
-          NUM_PARTICLES       + "\t" +
-          LEARNING_RATE       + "\t" +
-          UTILITY_OF_$$$      + "\t"
+        WORKER_DIST.getStandardDeviation + "\t" +
+        INITIAL_QUALITY     + "\t" +
+        IMPROVEMENT_COST    + "\t" +
+        BALLOT_COST         + "\t" +
+        DIFFICULTY_CONSTANT + "\t" +
+        LOOKAHEAD_DEPTH     + "\t" +
+        NUM_QUESTIONS       + "\t" +
+        INITIAL_BALANCE     + "\t" +
+        NUM_PARTICLES       + "\t" +
+        LEARNING_RATE       + "\t" +
+        UTILITY_OF_$$$      + "\t"
     }
 }
 
@@ -60,6 +78,7 @@ case class Runnit(exper: Exp) {
     def run(outFile: String = "test.txt", mode: String = "1\t") {
         for (i <- 1 to exper.NUM_QUESTIONS) {
             qstn = Question(outFile = outFile)
+            if (i == 1) qstn.state.output.write(exper.columnTitles)
             qstn.state.output.write(mode)
             qstn.state.output.write(exper.parametersAsString)
             if (mode == exper.EXP_CHOOSEACTION)

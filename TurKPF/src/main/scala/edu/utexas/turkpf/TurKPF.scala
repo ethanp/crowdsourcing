@@ -154,7 +154,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     val state = QuestionState(outFile)
 
     val print = !args.contains("nostdout")
-    def ifPrintln(s: String) { println(s) }
+    def ifPrintln(s: String) { if (print) println(s) }
 
     // [DTC] trueGX > 0; code is worker_dist-agnostic
     val wrkrs = Workers(state)
@@ -167,7 +167,6 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     // the math for this checks out
     def convolute_Utility_with_Particles(pf: PF):
     Double = (0.0 /: pf.particles)(_ + exper.UTILITY_FUNCTION(_)) / exper.NUM_PARTICLES
-
 
     def submit_final() = {
         val finalUtility = utility_of_submitting() + state.balance * exper.UTILITY_OF_$$$
