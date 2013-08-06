@@ -25,9 +25,9 @@ case class CONSTANTS() {
     var BALLOT_COST         = .75
     var DIFFICULTY_CONSTANT = 0.5
     var LOOKAHEAD_DEPTH     = 2
-    var NUM_QUESTIONS       = 10
+    var NUM_QUESTIONS       = 200
     var INITIAL_BALANCE     = 10.0
-    var NUM_PARTICLES       = 100
+    var NUM_PARTICLES       = 500
     var LEARNING_RATE       = 0.05
     var UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
@@ -79,7 +79,7 @@ case class Runnit(exper: CONSTANTS) {
             qstn.state.output.write(mode)
             qstn.state.output.write(exper.parametersAsString)
             if (mode == exper.NO_LOOKAHEAD)
-                while(qstn.choose_action()){}
+                while(qstn.dont_lookahead()){}
             else while(qstn.look_ahead()){}
         }
     }
@@ -89,16 +89,17 @@ trait ExperimentRunner {
     val exper = CONSTANTS()
     val runner = Runnit(exper)
     var fileName = "TurKpfResults.tsv"
+    var searchAlgorithm = exper.USE_LOOKAHEAD
     def modifyConstants(): Unit = {}
     def run() {
-        runner.run(modifyConstants, fileName, exper.USE_LOOKAHEAD)
+        runner.run(modifyConstants, fileName, searchAlgorithm)
     }
 }
 
 /************* Experiments: **************/
 
 object SweepNumParticles extends App with ExperimentRunner {
-    exper.NUM_QUESTIONS = 200
+    fileName = "SweepNumParticles.tsv"
     override def modifyConstants(): Unit = {
         exper.NUM_PARTICLES += 100
     }
@@ -106,8 +107,12 @@ object SweepNumParticles extends App with ExperimentRunner {
 }
 
 object JustRun200Times extends App with ExperimentRunner {
-    exper.NUM_QUESTIONS = 200
-    exper.NUM_PARTICLES = 500
+    fileName = "TurKpfResults.tsv"
     run()
 }
 
+object NoLookahead200Times extends App with ExperimentRunner {
+    fileName = "NoLookahead200Times.tsv"
+    searchAlgorithm = exper.NO_LOOKAHEAD
+    run()
+}

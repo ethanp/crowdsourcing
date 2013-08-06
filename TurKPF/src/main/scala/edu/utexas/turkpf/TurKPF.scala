@@ -13,7 +13,7 @@ package edu.utexas.turkpf
 // TODO Parse the actions with Excel:
 //   Pg. 243 of the Excel 2010 Bible
 
-// TODO: Gaping logic error: the final utility has to include the end-balance,
+// TODO: Little logic error: the final utility has to include the end-balance,
 //   this means all utility calculations must add the utility of the current balance
 
 import java.io.FileWriter
@@ -24,7 +24,7 @@ import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment.experiment_parameters._  and so on  */
-import JustRun200Times._
+import NoLookahead200Times._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -165,14 +165,14 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def utility_of_submitting(f_Q:      PF = state.f_Q,
                               f_QPrime: PF = state.f_QPrime):
     Double = max(convolute_Utility_with_Particles(f_Q),
-                 convolute_Utility_with_Particles(f_QPrime))
+                 convolute_Utility_with_Particles(f_QPrime)) + state.balance * exper.UTILITY_OF_$$$
 
     // the math for this checks out
     def convolute_Utility_with_Particles(pf: PF):
     Double = (0.0 /: pf.particles)(_ + exper.UTILITY_FUNCTION(_)) / exper.NUM_PARTICLES
 
     def submit_final() = {
-        val finalUtility = utility_of_submitting() + state.balance * exper.UTILITY_OF_$$$
+        val finalUtility = utility_of_submitting()
         ifPrintln(f"Final Utility: $finalUtility%.2f")
         state.output.write("2\t")
         state.output.write(f"$finalUtility%.2f\n")
@@ -185,7 +185,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                                    f_QPrime: PF = state.f_QPrime):
     Double = {
         val (orig_predicted, prime_predicted) = utility_of_stopping_voting(f_Q, f_QPrime)
-        max(orig_predicted, prime_predicted) - exper.IMPROVEMENT_COST * exper.UTILITY_OF_$$$
+        max(orig_predicted, prime_predicted) + (state.balance - exper.IMPROVEMENT_COST) * exper.UTILITY_OF_$$$
     }
 
     // [DTC] (eq. 9)
@@ -214,7 +214,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         max(
             expVal_after_a_vote(dist_Q_after_vote(f_Q, f_QPrime), probYes),
             expVal_after_a_vote(dist_QPrime_after_vote(f_Q, f_QPrime), probYes)
-        ) - exper.BALLOT_COST * exper.UTILITY_OF_$$$
+        ) + (state.balance - exper.BALLOT_COST) * exper.UTILITY_OF_$$$
     }
 
     // [DTC] (bottom-left Pg. 4)
@@ -400,35 +400,37 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def go_deeper(route:            Lookahead,
                   newLookaheadList: List[Lookahead]):
     List[Lookahead] = {
-        val anotherLayer: List[Lookahead] = List("improve", "ballot", "submit") map { action =>
-            val (f_qNew, f_QPrimeNew, curBalNew):
-            (PF, PF, Double) = action match {
+        val anotherLayer: List[Lookahead] =
+            List("improve", "ballot", "submit")
+                .map { action =>
+                    val (f_qNew, f_QPrimeNew, curBalNew):
+                    (PF, PF, Double) = action match {
 
-                case "improve" =>
-                    improvement_job(route.f_Q, route.f_QPrime, route.curBalance)
+                        case "improve" =>
+                            improvement_job(route.f_Q, route.f_QPrime, route.curBalance)
 
-                case "ballot" =>
-                    ballot_job(route.f_Q, route.f_QPrime, route.curBalance)
+                        case "ballot" =>
+                            ballot_job(route.f_Q, route.f_QPrime, route.curBalance)
 
-                case "submit" =>
-                    (route.f_Q, route.f_QPrime, route.curBalance)
+                        case "submit" =>
+                            (route.f_Q, route.f_QPrime, route.curBalance)
 
-                case _ => throw new RuntimeException
+                        case _ => throw new RuntimeException
 
-            }
-            val utility: Double = {
-                max(
-                    convolute_Utility_with_Particles(f_qNew),
-                    convolute_Utility_with_Particles(f_QPrimeNew)
-                ) - (route.curBalance - curBalNew * exper.UTILITY_OF_$$$)
-            }
+                    }
+                    val utility: Double = {
+                        max(
+                            convolute_Utility_with_Particles(f_qNew),
+                            convolute_Utility_with_Particles(f_QPrimeNew)
+                        ) - (route.curBalance - curBalNew * exper.UTILITY_OF_$$$)
+                    }
 
-            new Lookahead(action :: route.actions, f_qNew, f_QPrimeNew, utility, curBalNew)
-        }
+                    new Lookahead(action :: route.actions, f_qNew, f_QPrimeNew, utility, curBalNew)
+                }
         anotherLayer ::: newLookaheadList
     }
 
-    def choose_action(): Boolean = {
+    def dont_lookahead(): Boolean = {
         val artifactUtility    = utility_of_submitting()
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
@@ -470,5 +472,12 @@ case class Lookahead(actions:    List[String],
                      utility:    Double,
                      curBalance: Double)
 
-object Test_choose_action extends App { while(Question().choose_action()){}  }
-object Test_look_ahead    extends App { while(Question().look_ahead()){}    }
+object Test_choose_action extends App {
+    val q = Question()
+    while( q.dont_lookahead() ) {}
+}
+
+object Test_look_ahead extends App {
+    val q = Question()
+    while( q.look_ahead() ) {}
+}
