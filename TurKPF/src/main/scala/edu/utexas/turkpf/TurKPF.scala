@@ -10,11 +10,13 @@
 
 package edu.utexas.turkpf
 
-// TODO Parse the actions with Excel:
-//   Pg. 243 of the Excel 2010 Bible
+// To parse the actions with Excel:
+//   Pg. 243 of the Excel 2010 Bible:
+// LEN(<CELL>)-LEN(SUBSTITUTE(<CELL>,<ActionVal, e.g. "1">,""))
 
-// TODO: Little logic error: the final utility has to include the end-balance,
-//   this means all utility calculations must add the utility of the current balance
+// why are there no observations in the Excel?
+//   because excel strips them by default when you import the TSV
+//  you have to manually change that field to be imported as "text" formatted
 
 import java.io.FileWriter
 import math._

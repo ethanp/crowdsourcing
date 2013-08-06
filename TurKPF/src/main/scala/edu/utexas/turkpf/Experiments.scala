@@ -88,18 +88,19 @@ case class Runnit(exper: CONSTANTS) {
 trait ExperimentRunner {
     val exper = CONSTANTS()
     val runner = Runnit(exper)
-    var fileName = "TurKpfResults.tsv"
+    val curTime = new java.text.SimpleDateFormat("MM-dd-hh-mm").format(new java.util.Date())
+    var fileName = "TurKpfResults"
     var searchAlgorithm = exper.USE_LOOKAHEAD
     def modifyConstants(): Unit = {}
     def run() {
-        runner.run(modifyConstants, fileName, searchAlgorithm)
+        runner.run(modifyConstants, s"${fileName}_$curTime.tsv", searchAlgorithm)
     }
 }
 
 /************* Experiments: **************/
 
 object SweepNumParticles extends App with ExperimentRunner {
-    fileName = "SweepNumParticles.tsv"
+    fileName = "SweepNumParticles"
     override def modifyConstants(): Unit = {
         exper.NUM_PARTICLES += 100
     }
@@ -107,12 +108,13 @@ object SweepNumParticles extends App with ExperimentRunner {
 }
 
 object JustRun200Times extends App with ExperimentRunner {
-    fileName = "TurKpfResults.tsv"
+    fileName = "TurKpfResults"
     run()
 }
 
 object NoLookahead200Times extends App with ExperimentRunner {
-    fileName = "NoLookahead200Times.tsv"
+    fileName = "NoLook20"
+    exper.NUM_QUESTIONS = 20
     searchAlgorithm = exper.NO_LOOKAHEAD
     run()
 }
