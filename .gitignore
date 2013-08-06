@@ -4,3 +4,4 @@ TurKPF/sbt-development
 TurKPF/sbt-production
 TurKPF/*.txt
 TurKPF/*.tsv
+target
