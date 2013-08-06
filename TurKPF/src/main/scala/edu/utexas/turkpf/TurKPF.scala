@@ -13,6 +13,9 @@ package edu.utexas.turkpf
 // TODO Parse the actions with Excel:
 //   Pg. 243 of the Excel 2010 Bible
 
+// TODO: Gaping logic error: the final utility has to include the end-balance,
+//   this means all utility calculations must add the utility of the current balance
+
 import java.io.FileWriter
 import math._
 import org.apache.commons.math3.distribution.BetaDistribution
@@ -21,7 +24,7 @@ import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment.experiment_parameters._  and so on  */
-import Vary_Ballot_Cost._
+import JustRun200Times._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -191,12 +194,13 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     (Double, Double) = {
         val orig_predicted = convolute_Utility_with_Particles(f_Q.predict)
         val prime_predicted = convolute_Utility_with_Particles(f_QPrime.predict)
-        ifPrintln({
-            if (f_Q == state.f_Q) {
+        ifPrintln(
+            if (f_Q == state.f_Q)
                 s"Predicted Original Utility:   $orig_predicted" +
                 s"Predicted Prime Utility:      $prime_predicted"
-            } else ""
-        })
+
+            else ""
+        )
         (orig_predicted, prime_predicted)
     }
 
@@ -247,13 +251,13 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def dist_Q_after_vote(f_Q:      PF = state.f_Q,
                           f_QPrime: PF = state.f_QPrime)
                          (vote:     Boolean):
-    PF = f_Q.weight_and_sample(vote, f_QPrime, false)
+    PF = f_Q.weight_and_sample(vote, f_QPrime, prime = false)
 
     // [DTC] (eq. 7-8) the same as above
     def dist_QPrime_after_vote(f_Q:      PF = state.f_Q,
                                f_QPrime: PF = state.f_QPrime)
                               (vote:     Boolean):
-    PF = f_QPrime.weight_and_sample(vote, f_Q, true)
+    PF = f_QPrime.weight_and_sample(vote, f_Q, prime = true)
 
 
     // [DTC] (eqs. 4,5,6,7,8)
@@ -385,7 +389,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                 true
             }
             case "submit" =>  {
-                ifPrintln("submit")
+                ifPrintln("SUBMIT\n\n**********************************************************")
                 submit_final()
                 false
             }
@@ -466,5 +470,5 @@ case class Lookahead(actions:    List[String],
                      utility:    Double,
                      curBalance: Double)
 
-object Test_choose_action extends App { while(true) FirstExperiment.qstn.choose_action() }
-object Test_look_ahead    extends App { while(true) FirstExperiment.qstn.look_ahead()    }
+object Test_choose_action extends App { while(Question().choose_action()){}  }
+object Test_look_ahead    extends App { while(Question().look_ahead()){}    }

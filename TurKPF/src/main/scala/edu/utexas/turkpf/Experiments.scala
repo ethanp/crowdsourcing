@@ -3,11 +3,11 @@ package edu.utexas.turkpf
 import org.apache.commons.math3.distribution.NormalDistribution
 import scala.math._
 
-case class Exp() {
+case class CONSTANTS() {
 
     // enum
-    val EXP_CHOOSEACTION = "0\t"
-    val EXP_LOOKAHEAD    = "1\t"
+    val NO_LOOKAHEAD = "0\t"
+    val USE_LOOKAHEAD    = "1\t"
 
     /* [DTC] gmX "follow a bell shaped distribution"
      *           "average error coefficient gm=1",
@@ -21,15 +21,15 @@ case class Exp() {
     // [DTC] § Experimental Setup, i.e. U(q)
     def UTILITY_FUNCTION(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)
 
-    val IMPROVEMENT_COST    = 3.0
-    val BALLOT_COST         = .75
-    val DIFFICULTY_CONSTANT = 0.5
-    val LOOKAHEAD_DEPTH     = 2
-    val NUM_QUESTIONS       = 10
-    val INITIAL_BALANCE     = 10.0
-    val NUM_PARTICLES       = 100
-    val LEARNING_RATE       = 0.05
-    val UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
+    var IMPROVEMENT_COST    = 3.0
+    var BALLOT_COST         = .75
+    var DIFFICULTY_CONSTANT = 0.5
+    var LOOKAHEAD_DEPTH     = 2
+    var NUM_QUESTIONS       = 10
+    var INITIAL_BALANCE     = 10.0
+    var NUM_PARTICLES       = 100
+    var LEARNING_RATE       = 0.05
+    var UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
     def columnTitles: String = {
         "mode\t"                  +
@@ -67,23 +67,47 @@ case class Exp() {
 
 object FirstExperiment extends App { val qstn = Question(/* default args */) }
 
-object Vary_Ballot_Cost extends App {
-    val exper = Exp()
-    val runner = Runnit(exper)
-    runner.run("test.tsv", exper.EXP_LOOKAHEAD)
-}
-
-case class Runnit(exper: Exp) {
+case class Runnit(exper: CONSTANTS) {
     var qstn = Question()
-    def run(outFile: String = "test.txt", mode: String = "1\t") {
+    def run(modifyConstants: () => Unit,
+            outFile: String = "test.txt",
+            mode: String = "1\t") {
         for (i <- 1 to exper.NUM_QUESTIONS) {
             qstn = Question(outFile = outFile)
+            modifyConstants()
             if (i == 1) qstn.state.output.write(exper.columnTitles)
             qstn.state.output.write(mode)
             qstn.state.output.write(exper.parametersAsString)
-            if (mode == exper.EXP_CHOOSEACTION)
+            if (mode == exper.NO_LOOKAHEAD)
                 while(qstn.choose_action()){}
             else while(qstn.look_ahead()){}
         }
     }
 }
+
+trait ExperimentRunner {
+    val exper = CONSTANTS()
+    val runner = Runnit(exper)
+    var fileName = "TurKpfResults.tsv"
+    def modifyConstants(): Unit = {}
+    def run() {
+        runner.run(modifyConstants, fileName, exper.USE_LOOKAHEAD)
+    }
+}
+
+/************* Experiments: **************/
+
+object SweepNumParticles extends App with ExperimentRunner {
+    exper.NUM_QUESTIONS = 200
+    override def modifyConstants(): Unit = {
+        exper.NUM_PARTICLES += 100
+    }
+    run()
+}
+
+object JustRun200Times extends App with ExperimentRunner {
+    exper.NUM_QUESTIONS = 200
+    exper.NUM_PARTICLES = 500
+    run()
+}
+
