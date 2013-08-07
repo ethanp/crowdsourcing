@@ -128,3 +128,14 @@ object SweepImpCost extends App with ExperimentRunner {
     }
     run()
 }
+
+object SweepImpCost2 extends App with ExperimentRunner {
+    fileName = "SweepImpCost2"
+    exper.IMPROVEMENT_COST = .05
+    exper.INITIAL_BALANCE  = 10.0
+    exper.BALLOT_COST      = 1.0
+    override def modifyConstants(): Unit = {
+        exper.IMPROVEMENT_COST += .05
+    }
+    run()
+}

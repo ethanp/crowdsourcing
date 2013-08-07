@@ -26,7 +26,7 @@ import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment.experiment_parameters._  and so on  */
-import SweepImpCost._
+import SweepImpCost2._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -473,13 +473,3 @@ case class Lookahead(actions:    List[String],
                      f_QPrime:   PF,
                      utility:    Double,
                      curBalance: Double)
-
-object Test_choose_action extends App {
-    val q = Question()
-    while( q.dont_lookahead() ) {}
-}
-
-object Test_look_ahead extends App {
-    val q = Question()
-    while( q.look_ahead() ) {}
-}
