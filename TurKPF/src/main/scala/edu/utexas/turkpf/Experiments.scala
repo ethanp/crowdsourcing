@@ -107,6 +107,16 @@ object SweepNumParticles extends App with ExperimentRunner {
     run()
 }
 
+object SweepNumParticles2 extends App with ExperimentRunner {
+    fileName = "SweepNumParticles2"
+    exper.NUM_PARTICLES = 5
+    exper.NUM_QUESTIONS = 500
+    override def modifyConstants(): Unit = {
+        exper.NUM_PARTICLES += 1
+    }
+    run()
+}
+
 object JustRun200Times extends App with ExperimentRunner {
     fileName = "TurKpfResults"
     run()
@@ -136,6 +146,17 @@ object SweepImpCost2 extends App with ExperimentRunner {
     exper.BALLOT_COST      = 1.0
     override def modifyConstants(): Unit = {
         exper.IMPROVEMENT_COST += .05
+    }
+    run()
+}
+
+object SweepImpCost3 extends App with ExperimentRunner {
+    fileName = "SweepImpCost3"
+    exper.IMPROVEMENT_COST = .1
+    exper.INITIAL_BALANCE  = 100.0
+    exper.BALLOT_COST      = 3.0
+    override def modifyConstants(): Unit = {
+        exper.IMPROVEMENT_COST += .1
     }
     run()
 }

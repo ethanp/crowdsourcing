@@ -5,3 +5,4 @@ TurKPF/sbt-production
 TurKPF/*.txt
 TurKPF/*.tsv
 target
+*.xlsx
