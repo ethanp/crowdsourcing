@@ -6,8 +6,8 @@ import scala.math._
 case class CONSTANTS() {
 
     // enum
-    val NO_LOOKAHEAD = "0\t"
-    val USE_LOOKAHEAD    = "1\t"
+    val NO_LOOKAHEAD    = "0\t"
+    val USE_LOOKAHEAD   = "1\t"
 
     /* [DTC] gmX "follow a bell shaped distribution"
      *           "average error coefficient gm=1",
@@ -114,7 +114,17 @@ object JustRun200Times extends App with ExperimentRunner {
 
 object NoLookahead200Times extends App with ExperimentRunner {
     fileName = "NoLook20"
-    exper.NUM_QUESTIONS = 20
     searchAlgorithm = exper.NO_LOOKAHEAD
+    run()
+}
+
+object SweepImpCost extends App with ExperimentRunner {
+    fileName = "SweepImpCost"
+    exper.IMPROVEMENT_COST = .05
+    exper.INITIAL_BALANCE  = 15.0
+    exper.BALLOT_COST      = 1.0
+    override def modifyConstants(): Unit = {
+        exper.IMPROVEMENT_COST += .05
+    }
     run()
 }
