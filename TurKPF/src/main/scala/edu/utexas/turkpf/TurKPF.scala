@@ -14,10 +14,6 @@ package edu.utexas.turkpf
 //   Pg. 243 of the Excel 2010 Bible:
 // LEN(<CELL>)-LEN(SUBSTITUTE(<CELL>,<ActionVal, e.g. "1">,""))
 
-// why are there no observations in the Excel?
-//   because excel strips them by default when you import the TSV
-//  you have to manually change that field to be imported as "text" formatted
-
 import java.io.FileWriter
 import math._
 import org.apache.commons.math3.distribution.BetaDistribution
@@ -107,8 +103,8 @@ case class PF(numParticles: Int, particles: Array[Double]) {
 /* model all workers with just one worker-independent model */
 case class Workers(state: QuestionState) {
     // [DTC] (above eq. 3)
-    def accuracy(difficulty: Double, trueGmX: Double = state.estGX) =
-        0.5 * (1 + pow(1 - difficulty, trueGmX))
+    def accuracy(difficulty: Double, gammaToUse: Double = state.estGX) =
+        0.5 * (1 + pow(1 - difficulty, gammaToUse))
 
     // [DTC] (eq. 2)
     def difficulty(qlty:      Double,
@@ -177,7 +173,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def submit_final() = {
         val finalUtility = utility_of_submitting()
         ifPrintln(f"Final Utility: $finalUtility%.2f")
-        state.output.write("2\t")
+        state.output.write("S\t")
         state.output.write(f"$finalUtility%.2f\n")
         state.output.close()
 //        sys exit 0
@@ -195,7 +191,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def utility_of_stopping_voting(f_Q:      PF = state.f_Q,
                                    f_QPrime: PF = state.f_QPrime):
     (Double, Double) = {
-        val orig_predicted = convolute_Utility_with_Particles(f_Q.predict)
+        val orig_predicted  = convolute_Utility_with_Particles(f_Q.predict)
         val prime_predicted = convolute_Utility_with_Particles(f_QPrime.predict)
         ifPrintln(
             if (f_Q == state.f_Q)
@@ -209,11 +205,11 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     /***************************** BALLOT JOB STUFF *******************************/
     // [DTC] (bottom-left Pg. 4) ;  i.e.  E[ U( Q | b_{n} + 1 ) ]
-    def utility_of_voting(f_Q:      PF = state.f_Q,
-                          f_QPrime: PF = state.f_QPrime,
-                          trueGmX: Double = state.estGX):
+    def utility_of_voting(f_Q:        PF = state.f_Q,
+                          f_QPrime:   PF = state.f_QPrime,
+                          gammaToUse: Double = state.estGX):
     Double = {
-        val probYes = probability_of_yes_vote(f_Q, f_QPrime, trueGmX)
+        val probYes = probability_of_yes_vote(f_Q, f_QPrime, gammaToUse)
         ifPrintln(s"probYes: $probYes")
         max(
             expVal_after_a_vote(dist_Q_after_vote(f_Q, f_QPrime), probYes),
@@ -229,25 +225,25 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      *   This convolution will yield a scalar
      * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
      */
-    def probability_of_yes_vote(f_Q:      PF = state.f_Q,
-                                f_QPrime: PF = state.f_QPrime,
-                                trueGmX:  Double = state.estGX):
+    def probability_of_yes_vote(f_Q:        PF = state.f_Q,
+                                f_QPrime:   PF = state.f_QPrime,
+                                gammaToUse: Double = state.estGX):
     Double = {
         (0.0 /: f_Q.particles)((sumA, particleA) =>
             sumA + particleA * (0.0 /: f_QPrime.particles)((sumB, particleB) =>
-                sumB + prob_true_given_Qs(particleA, particleB, trueGmX)
+                sumB + prob_true_given_Qs(particleA, particleB, gammaToUse)
             ) / exper.NUM_PARTICLES
         ) / exper.NUM_PARTICLES
     }
 
     // I checked and this function works properly
-    def prob_true_given_Qs(q: Double, qPrime: Double, trueGmX: Double = state.estGX): Double =
-        invertIfFalse(q < qPrime, wrkrs.accuracy(wrkrs.difficulty(q, qPrime), trueGmX))
+    def prob_true_given_Qs(q: Double, qPrime: Double, gammaToUse: Double = state.estGX): Double =
+        invertIfFalse(q < qPrime, wrkrs.accuracy(wrkrs.difficulty(q, qPrime), gammaToUse))
 
     def expVal_after_a_vote(f: Boolean => PF,
                             probYes: Double):
     Double = {
-        if (probYes > 1 || probYes < 0) throw new RuntimeException
+        assert(probYes > 1 || probYes < 0, "probability out of range")
         convolute_Utility_with_Particles(f(true)) * probYes +
             convolute_Utility_with_Particles(f(false)) * (1 - probYes)
     }
@@ -287,7 +283,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      * 4. Return vote
      */
     def ballot_job(): Boolean = {
-        val vote = random < probability_of_yes_vote(trueGmX = exper.WORKER_DIST.sample)
+        var sampleWorkerPool = exper.WORKER_DIST.sample
+        while (sampleWorkerPool < 0) sampleWorkerPool = exper.WORKER_DIST.sample
+        val vote = random < probability_of_yes_vote(gammaToUse = sampleWorkerPool)
         state.votes ::= vote
         ifPrintln(s"vote :: ${vote.toString.toUpperCase} #L293\n")
         ifPrintln(state.votes.reverse.mkString("(",", ",")"))
@@ -295,7 +293,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
-        state.output.write("1")
+        state.output.write("B")
         vote
     }
 
@@ -333,7 +331,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
-        state.output.write("0")
+        state.output.write("I")
     }
 
      /*   For Tuple in DataStruct:

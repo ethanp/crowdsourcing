@@ -12,7 +12,7 @@ case class CONSTANTS() {
     /* [DTC] gmX "follow a bell shaped distribution"
      *           "average error coefficient gm=1",
      *             where gmX > 0 */
-    val WORKER_DIST         = new NormalDistribution(1,0.2)
+    var WORKER_DIST         = new NormalDistribution(1,0.2)
 
     /* this is a method so that it can be set to generate a random
      * initial quality every time a question starts */
@@ -49,7 +49,7 @@ case class CONSTANTS() {
         "final utility\n"
     }
 
-    def parametersAsString: String = {
+    def parameterValuesAsString: String = {
         s"${WORKER_DIST.getMean}\t" +
         s"${WORKER_DIST.getStandardDeviation}\t" +
         s"$INITIAL_QUALITY\t" +
@@ -80,7 +80,7 @@ case class Runnit(exper: CONSTANTS) {
             modifyConstants()
             if (i == 1) qstn.state.output.write(exper.columnTitles)
             qstn.state.output.write(mode)
-            qstn.state.output.write(exper.parametersAsString)
+            qstn.state.output.write(exper.parameterValuesAsString)
             if (mode == exper.NO_LOOKAHEAD)
                 while(qstn.dont_lookahead()){}
             else while(qstn.look_ahead()){}
@@ -92,7 +92,7 @@ trait ExperimentRunner {
     val exper = CONSTANTS()
     val runner = Runnit(exper)
     val curTime = new java.text.SimpleDateFormat("MM-dd-hh-mm").format(new java.util.Date())
-    var fileName = "TurKpfResults"
+    var fileName = this.getClass.toString.replace("class ","")
     var searchAlgorithm = exper.USE_LOOKAHEAD
     def modifyConstants(): Unit = {}
     def run() {
@@ -121,18 +121,15 @@ object SweepNumParticles2 extends App with ExperimentRunner {
 }
 
 object JustRun200Times extends App with ExperimentRunner {
-    fileName = "TurKpfResults"
     run()
 }
 
 object NoLookahead200Times extends App with ExperimentRunner {
-    fileName = "NoLook20"
     searchAlgorithm = exper.NO_LOOKAHEAD
     run()
 }
 
 object SweepImpCost extends App with ExperimentRunner {
-    fileName = "SweepImpCost"
     exper.IMPROVEMENT_COST = .05
     exper.INITIAL_BALANCE  = 15.0
     exper.BALLOT_COST      = 1.0
@@ -143,7 +140,6 @@ object SweepImpCost extends App with ExperimentRunner {
 }
 
 object SweepImpCost2 extends App with ExperimentRunner {
-    fileName = "SweepImpCost2"
     exper.IMPROVEMENT_COST = .05
     exper.INITIAL_BALANCE  = 10.0
     exper.BALLOT_COST      = 1.0
@@ -154,7 +150,6 @@ object SweepImpCost2 extends App with ExperimentRunner {
 }
 
 object SweepImpCost3 extends App with ExperimentRunner {
-    fileName = "SweepImpCost3"
     exper.IMPROVEMENT_COST = .1
     exper.INITIAL_BALANCE  = 100.0
     exper.BALLOT_COST      = 3.0
@@ -162,4 +157,12 @@ object SweepImpCost3 extends App with ExperimentRunner {
         exper.IMPROVEMENT_COST += .1
     }
     run()
+}
+
+object SweepGmX extends App with ExperimentRunner {
+    var i = .1
+    override def modifyConstants(): Unit = {
+        i += .03
+        exper.WORKER_DIST = new NormalDistribution(i, 0.2)
+    }
 }
