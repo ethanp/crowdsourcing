@@ -120,9 +120,7 @@ object SweepNumParticles2 extends App with ExperimentRunner {
     run()
 }
 
-object JustRun200Times extends App with ExperimentRunner {
-    run()
-}
+object JustRun200Times extends App with ExperimentRunner { run() }
 
 object NoLookahead200Times extends App with ExperimentRunner {
     searchAlgorithm = exper.NO_LOOKAHEAD
@@ -165,4 +163,17 @@ object SweepGmX extends App with ExperimentRunner {
         i += .03
         exper.WORKER_DIST = new NormalDistribution(i, 0.2)
     }
+    run()
+}
+
+object SweepLookaheadDepth extends App with ExperimentRunner {
+    exper.LOOKAHEAD_DEPTH = 1
+    var i = 1
+    exper.WORKER_DIST = new NormalDistribution(5, 2)
+    override def modifyConstants(): Unit = {
+        i += 1
+        if (i % 100 == 0)
+            exper.LOOKAHEAD_DEPTH += 1
+    }
+    run()
 }
