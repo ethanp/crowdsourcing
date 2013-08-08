@@ -107,7 +107,8 @@ case class PF(numParticles: Int, particles: Array[Double]) {
 /* model all workers with just one worker-independent model */
 case class Workers(state: QuestionState) {
     // [DTC] (above eq. 3)
-    def accuracy(difficulty: Double) = 0.5 * (1 + pow(1 - difficulty, state.estGX))
+    def accuracy(difficulty: Double, trueGmX: Double = state.estGX) =
+        0.5 * (1 + pow(1 - difficulty, trueGmX))
 
     // [DTC] (eq. 2)
     def difficulty(qlty:      Double,
@@ -136,14 +137,14 @@ case class Workers(state: QuestionState) {
 }
 
 case class QuestionState(outFile: String) {
-    var estGX = 1.0  // set to the mean of the true distribution
-                     // could be altered to test robustness
+    /* This is a value we'd have to use machine learning on real data to obtain
+     * It can be altered to test robustness under varying "true" distributions
+     */
+    var estGX = 1.0
     var balance = exper.INITIAL_BALANCE
     var qlty = exper.INITIAL_QUALITY
     var qltyPrime = 0.0
     var votes = List[Boolean]()
-    var workerTrueGm = exper.WORKER_DIST.sample
-    while (workerTrueGm < 0) workerTrueGm = exper.WORKER_DIST.sample
     var f_Q = new PF  // defaults to BetaDist(1,9)
 
     // [DTC] § Experimental Setup
@@ -209,9 +210,10 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     /***************************** BALLOT JOB STUFF *******************************/
     // [DTC] (bottom-left Pg. 4) ;  i.e.  E[ U( Q | b_{n} + 1 ) ]
     def utility_of_voting(f_Q:      PF = state.f_Q,
-                          f_QPrime: PF = state.f_QPrime):
+                          f_QPrime: PF = state.f_QPrime,
+                          trueGmX: Double = state.estGX):
     Double = {
-        val probYes = probability_of_yes_vote(f_Q, f_QPrime)
+        val probYes = probability_of_yes_vote(f_Q, f_QPrime, trueGmX)
         ifPrintln(s"probYes: $probYes")
         max(
             expVal_after_a_vote(dist_Q_after_vote(f_Q, f_QPrime), probYes),
@@ -228,18 +230,19 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
      */
     def probability_of_yes_vote(f_Q:      PF = state.f_Q,
-                                f_QPrime: PF = state.f_QPrime):
+                                f_QPrime: PF = state.f_QPrime,
+                                trueGmX:  Double = state.estGX):
     Double = {
         (0.0 /: f_Q.particles)((sumA, particleA) =>
             sumA + particleA * (0.0 /: f_QPrime.particles)((sumB, particleB) =>
-                sumB + prob_true_given_Qs(particleA, particleB)
+                sumB + prob_true_given_Qs(particleA, particleB, trueGmX)
             ) / exper.NUM_PARTICLES
         ) / exper.NUM_PARTICLES
     }
 
     // I checked and this function works properly
-    def prob_true_given_Qs(q: Double, qPrime: Double): Double =
-        invertIfFalse(q < qPrime, wrkrs.accuracy(wrkrs.difficulty(q, qPrime)))
+    def prob_true_given_Qs(q: Double, qPrime: Double, trueGmX: Double = state.estGX): Double =
+        invertIfFalse(q < qPrime, wrkrs.accuracy(wrkrs.difficulty(q, qPrime), trueGmX))
 
     def expVal_after_a_vote(f: Boolean => PF,
                             probYes: Double):
@@ -284,7 +287,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      * 4. Return vote
      */
     def ballot_job(): Boolean = {
-        val vote = random < probability_of_yes_vote()
+        val vote = random < probability_of_yes_vote(trueGmX = exper.WORKER_DIST.sample)
         state.votes ::= vote
         ifPrintln(s"vote :: ${vote.toString.toUpperCase} #L293\n")
         ifPrintln(state.votes.reverse.mkString("(",", ",")"))

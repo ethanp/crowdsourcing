@@ -65,7 +65,10 @@ case class CONSTANTS() {
     }
 }
 
-object FirstExperiment extends App { val qstn = Question(/* default args */) }
+object TestThatItRuns extends App {
+    val qstn = Question(/* default args */)
+    while(qstn.dont_lookahead()){}
+}
 
 case class Runnit(exper: CONSTANTS) {
     var qstn = Question()
