@@ -21,7 +21,7 @@ import scala.annotation.tailrec
 import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
- *  import SecondExperiment.experiment_parameters._  and so on  */
+ *  import SecondExperiment._  and so on  */
 import SweepLookaheadDepth._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
@@ -155,7 +155,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     val state = QuestionState(outFile)
 
-    val print = !args.contains("nostdout")
+    val print = !(args contains "nostdout")
     def ifPrintln(s: String) { if (print) println(s) }
 
     // [DTC] trueGX > 0; code is worker_dist-agnostic
@@ -176,7 +176,6 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         state.output.write("S\t")
         state.output.write(f"$finalUtility%.2f\n")
         state.output.close()
-//        sys exit 0
     }
 
     // [DTC] (top-right of page 4)
@@ -230,7 +229,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                                 gammaToUse: Double = state.estGX):
     Double = {
         (0.0 /: f_Q.particles)((sumA, particleA) =>
-            sumA + particleA * (0.0 /: f_QPrime.particles)((sumB, particleB) =>
+            sumA + (0.0 /: f_QPrime.particles)((sumB, particleB) =>
                 sumB + prob_true_given_Qs(particleA, particleB, gammaToUse)
             ) / exper.NUM_PARTICLES
         ) / exper.NUM_PARTICLES
@@ -243,7 +242,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def expVal_after_a_vote(f: Boolean => PF,
                             probYes: Double):
     Double = {
-        assert(probYes > 1 || probYes < 0, "probability out of range")
+        assert(probYes < 1 && probYes > 0, "probability out of range")
         convolute_Utility_with_Particles(f(true)) * probYes +
             convolute_Utility_with_Particles(f(false)) * (1 - probYes)
     }
@@ -404,8 +403,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                   newLookaheadList: List[Lookahead]):
     List[Lookahead] = {
         val anotherLayer: List[Lookahead] =
-            List("improve", "ballot", "submit")
-                .map { action =>
+            List("improve", "ballot", "submit") map {
+                action =>
                     val (f_qNew, f_QPrimeNew, curBalNew):
                     (PF, PF, Double) = action match {
 
@@ -429,7 +428,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                     }
 
                     new Lookahead(action :: route.actions, f_qNew, f_QPrimeNew, utility, curBalNew)
-                }
+            }
         anotherLayer ::: newLookaheadList
     }
 

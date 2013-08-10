@@ -92,7 +92,8 @@ trait ExperimentRunner {
     val exper = CONSTANTS()
     val runner = Runnit(exper)
     val curTime = new java.text.SimpleDateFormat("MM-dd-hh-mm").format(new java.util.Date())
-    var fileName = this.getClass.toString.replace("class ","")
+    var fileName = this.getClass.toString
+    fileName.drop(fileName.lastIndexOf("."))
     var searchAlgorithm = exper.USE_LOOKAHEAD
     def modifyConstants(): Unit = {}
     def run() {
@@ -101,6 +102,8 @@ trait ExperimentRunner {
 }
 
 /************* Experiments: **************/
+/* every variable defined in each experiment overrides the default */
+/* TODO: "this stub corresponds to 'this' experiment in the paper" */
 
 object SweepNumParticles extends App with ExperimentRunner {
     fileName = "SweepNumParticles"
@@ -167,7 +170,7 @@ object SweepGmX extends App with ExperimentRunner {
 }
 
 object SweepLookaheadDepth extends App with ExperimentRunner {
-    exper.LOOKAHEAD_DEPTH = 1
+    exper.LOOKAHEAD_DEPTH = 3
     var i = 1
     exper.WORKER_DIST = new NormalDistribution(5, 2)
     override def modifyConstants(): Unit = {
