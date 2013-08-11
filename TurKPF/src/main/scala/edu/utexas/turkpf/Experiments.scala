@@ -8,6 +8,7 @@ case class CONSTANTS() {
     // enum
     val NO_LOOKAHEAD    = "0\t"
     val USE_LOOKAHEAD   = "1\t"
+    val DONT_STOP       = "2\t"
 
     /* [DTC] gmX "follow a bell shaped distribution"
      *           "average error coefficient gm=1",
@@ -21,8 +22,8 @@ case class CONSTANTS() {
     // [DTC] § Experimental Setup, i.e. U(q)
     def UTILITY_FUNCTION(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)
 
-    var IMPROVEMENT_COST    = 3.0
-    var BALLOT_COST         = .75
+    var IMPROVEMENT_COST    = 1.0
+    var BALLOT_COST         = .15
     var DIFFICULTY_CONSTANT = 0.5
     var LOOKAHEAD_DEPTH     = 2
     var NUM_QUESTIONS       = 200
@@ -74,7 +75,7 @@ case class Runnit(exper: CONSTANTS) {
     var qstn = Question()
     def run(modifyConstants: () => Unit,
             outFile: String = "test.txt",
-            mode: String = "1\t") {
+            mode: String = exper.USE_LOOKAHEAD) {
         for (i <- 1 to exper.NUM_QUESTIONS) {
             qstn = Question(outFile = outFile)
             modifyConstants()
@@ -82,18 +83,20 @@ case class Runnit(exper: CONSTANTS) {
             qstn.state.output.write(mode)
             qstn.state.output.write(exper.parameterValuesAsString)
             if (mode == exper.NO_LOOKAHEAD)
-                while(qstn.dont_lookahead()){}
-            else while(qstn.look_ahead()){}
+                while (qstn.dont_lookahead()){}
+            else if (mode == exper.DONT_STOP)
+                while (qstn.dont_stop()){}
+            else while (qstn.look_ahead()){}
         }
     }
 }
 
 trait ExperimentRunner {
-    val exper = CONSTANTS()
-    val runner = Runnit(exper)
-    val curTime = new java.text.SimpleDateFormat("MM-dd-hh-mm").format(new java.util.Date())
+    val exper    = CONSTANTS()
+    val runner   = Runnit(exper)
+    val curTime  = new java.text.SimpleDateFormat("MM-dd-hh-mm").format(new java.util.Date())
     var fileName = this.getClass.toString
-    fileName.drop(fileName.lastIndexOf("."))
+    fileName = fileName.drop(fileName.lastIndexOf(".")+1)
     var searchAlgorithm = exper.USE_LOOKAHEAD
     def modifyConstants(): Unit = {}
     def run() {
@@ -170,13 +173,21 @@ object SweepGmX extends App with ExperimentRunner {
 }
 
 object SweepLookaheadDepth extends App with ExperimentRunner {
-    exper.LOOKAHEAD_DEPTH = 3
+    exper.LOOKAHEAD_DEPTH = 1
+    exper.NUM_QUESTIONS   = 250
+    exper.WORKER_DIST     = new NormalDistribution(5, 2)
     var i = 1
-    exper.WORKER_DIST = new NormalDistribution(5, 2)
     override def modifyConstants(): Unit = {
         i += 1
-        if (i % 100 == 0)
+        if (i % 50 == 0)
             exper.LOOKAHEAD_DEPTH += 1
     }
+    run()
+}
+
+// plots current est'd utility, and doesn't submit until money runs out
+object UtilitySpendAllMoney extends App with ExperimentRunner {
+    exper.NUM_QUESTIONS = 1
+    searchAlgorithm = exper.DONT_STOP
     run()
 }

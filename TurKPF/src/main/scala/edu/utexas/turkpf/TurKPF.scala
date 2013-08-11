@@ -12,7 +12,7 @@ package edu.utexas.turkpf
 
 // To parse the actions with Excel:
 //   Pg. 243 of the Excel 2010 Bible:
-// LEN(<CELL>)-LEN(SUBSTITUTE(<CELL>,<ActionVal, e.g. "1">,""))
+// =LEN(<CELL>)-LEN(SUBSTITUTE(<CELL>,<ActionVal, e.g. "B">,""))
 
 import java.io.FileWriter
 import math._
@@ -22,7 +22,7 @@ import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
-import SweepLookaheadDepth._
+import UtilitySpendAllMoney._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -136,16 +136,16 @@ case class QuestionState(outFile: String) {
     /* This is a value we'd have to use machine learning on real data to obtain
      * It can be altered to test robustness under varying "true" distributions
      */
-    var estGX = 1.0
-    var balance = exper.INITIAL_BALANCE
-    var qlty = exper.INITIAL_QUALITY
+    var estGX     = 1.0
+    var balance   = exper.INITIAL_BALANCE
+    var qlty      = exper.INITIAL_QUALITY
     var qltyPrime = 0.0
-    var votes = List[Boolean]()
-    var f_Q = new PF  // defaults to BetaDist(1,9)
+    var votes     = List[Boolean]()
+    var f_Q       = new PF  // defaults to BetaDist(1,9)
 
     // [DTC] § Experimental Setup
     // initialize the qPrime prior a little higher than the q prior
-    var f_QPrime = new PF(
+    var f_QPrime  = new PF(
         new BetaDistribution(2,9).sample(exper.NUM_PARTICLES)
     )
     val output: FileWriter = new FileWriter(outFile, true)
@@ -170,10 +170,10 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def convolute_Utility_with_Particles(pf: PF):
     Double = (0.0 /: pf.particles)(_ + exper.UTILITY_FUNCTION(_)) / exper.NUM_PARTICLES
 
-    def submit_final() = {
+    def submit_final(output: String = "S\t") = {
         val finalUtility = utility_of_submitting()
         ifPrintln(f"Final Utility: $finalUtility%.2f")
-        state.output.write("S\t")
+        state.output.write(output)
         state.output.write(f"$finalUtility%.2f\n")
         state.output.close()
     }
@@ -281,7 +281,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      * 3. Update distributions
      * 4. Return vote
      */
-    def ballot_job(): Boolean = {
+    def ballot_job(output: String): Boolean = {
         var sampleWorkerPool = exper.WORKER_DIST.sample
         while (sampleWorkerPool < 0) sampleWorkerPool = exper.WORKER_DIST.sample
         val vote = random < probability_of_yes_vote(gammaToUse = sampleWorkerPool)
@@ -292,7 +292,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
-        state.output.write("B")
+        state.output.write(output)
         vote
     }
 
@@ -322,7 +322,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         (newF_Q_of_q, newF_Q_of_q.predict, balance - exper.IMPROVEMENT_COST)
     }
 
-    def improvement_job() {
+    def improvement_job(output: String = "I") {
         // clear votes out
         wrkrs.updateGX(state.votes)
         state.votes = List[Boolean]()
@@ -330,7 +330,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
-        state.output.write("I")
+        state.output.write(output)
     }
 
      /*   For Tuple in DataStruct:
@@ -387,7 +387,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             }
             case "ballot" =>  {
                 ifPrintln("ballot")
-                ballot_job()
+                ballot_job("B")
                 true
             }
             case "submit" =>  {
@@ -462,7 +462,34 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         {
             ifPrintln("\n=> | BALLOT job |")
 
-            ballot_job(); printEnd(); true
+            ballot_job("B"); printEnd(); true
+        }
+        else { submit_final(); false }
+    }
+
+    def dont_stop(): Boolean = {
+        val voteUtility        = utility_of_voting()
+        val improvementUtility = utility_of_improvement_job()
+
+        val dontPrint = ""
+        def printEnd() = ifPrintln("\n\n****************************************************")
+
+        if (print) {
+            println(s"current balance:     ${state.balance}")
+            println(s"Predicted Original Utility:   ${convolute_Utility_with_Particles(state.f_Q)}")
+            println(s"Predicted Prime Utility:      ${convolute_Utility_with_Particles(state.f_QPrime)}")
+        }
+        if (improvementUtility > voteUtility && state.balance > exper.IMPROVEMENT_COST) {
+            ifPrintln("\n=> | IMPROVEMENT job |")
+            improvement_job(dontPrint)
+            state.output.write(f"${utility_of_submitting()}%.2f\t")
+            printEnd(); true
+        }
+        else if (state.balance > exper.BALLOT_COST) {
+            ifPrintln("\n=> | BALLOT job |")
+            ballot_job(dontPrint)
+            state.output.write(f"${utility_of_submitting()}%.2f\t")
+            printEnd(); true
         }
         else { submit_final(); false }
     }
