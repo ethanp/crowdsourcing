@@ -163,11 +163,11 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     def utility_of_submitting(f_Q:      PF = state.f_Q,
                               f_QPrime: PF = state.f_QPrime):
-    Double = max(convolute_Utility_with_Particles(f_Q),
-                 convolute_Utility_with_Particles(f_QPrime)) + state.balance * exper.UTILITY_OF_$$$
+    Double = max(expected_utility(f_Q),
+                 expected_utility(f_QPrime)) + state.balance * exper.UTILITY_OF_$$$
 
     // the math for this checks out
-    def convolute_Utility_with_Particles(pf: PF):
+    def expected_utility(pf: PF):
     Double = (0.0 /: pf.particles)(_ + exper.UTILITY_FUNCTION(_)) / exper.NUM_PARTICLES
 
     def submit_final(output: String = "S\t") = {
@@ -184,10 +184,10 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     Double = {
         val (orig_predicted, prime_predicted) = utility_of_stopping_voting(f_Q, f_QPrime)
         if (orig_predicted > prime_predicted)
-            max(orig_predicted, convolute_Utility_with_Particles(f_Q)) +
+            max(orig_predicted, expected_utility(f_Q)) +
               (state.balance - exper.IMPROVEMENT_COST) * exper.UTILITY_OF_$$$
         else
-            max(prime_predicted, convolute_Utility_with_Particles(f_QPrime)) +
+            max(prime_predicted, expected_utility(f_QPrime)) +
               (state.balance - exper.IMPROVEMENT_COST) * exper.UTILITY_OF_$$$
     }
 
@@ -195,8 +195,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def utility_of_stopping_voting(f_Q:      PF = state.f_Q,
                                    f_QPrime: PF = state.f_QPrime):
     (Double, Double) = {
-        val orig_predicted  = convolute_Utility_with_Particles(f_Q.predict)
-        val prime_predicted = convolute_Utility_with_Particles(f_QPrime.predict)
+        val orig_predicted  = expected_utility(f_Q.predict)
+        val prime_predicted = expected_utility(f_QPrime.predict)
         ifPrintln(
             if (f_Q == state.f_Q)
                 s"Predicted Original Utility:   $orig_predicted" +
@@ -248,8 +248,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                             probYes: Double):
     Double = {
         assert(probYes < 1 && probYes > 0, "probability out of range")
-        convolute_Utility_with_Particles(f(true)) * probYes +
-            convolute_Utility_with_Particles(f(false)) * (1 - probYes)
+        expected_utility(f(true)) * probYes +
+            expected_utility(f(false)) * (1 - probYes)
     }
 
     // [DTC] (eq. 5)
@@ -314,17 +314,13 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                         f_QPrime: PF,
                         balance:  Double):
     (PF, PF, Double) = {
-        val imprvF_Q = f_Q.predict
-        val imprvF_QPrime = f_QPrime.predict
-
-        val newF_Q_of_q = {
-            if (convolute_Utility_with_Particles(imprvF_Q)
-              > convolute_Utility_with_Particles(imprvF_QPrime))
-                imprvF_Q
+        val betterArtifact =
+            if (expected_utility(f_Q) > expected_utility(f_QPrime))
+                f_Q
             else
-                imprvF_QPrime
-        }
-        (newF_Q_of_q, newF_Q_of_q.predict, balance - exper.IMPROVEMENT_COST)
+                f_QPrime
+
+        (betterArtifact, betterArtifact.predict, balance - exper.IMPROVEMENT_COST)
     }
 
     def improvement_job(output: String = "I") {
@@ -427,8 +423,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                     }
                     val utility: Double = {
                         max(
-                            convolute_Utility_with_Particles(f_qNew),
-                            convolute_Utility_with_Particles(f_QPrimeNew)
+                            expected_utility(f_qNew),
+                            expected_utility(f_QPrimeNew)
                         ) - (route.curBalance - curBalNew * exper.UTILITY_OF_$$$)
                     }
 
@@ -450,8 +446,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     //        println("artifactUtility:    " + artifactUtility)
     //        println("voteUtility:        " + voteUtility)
     //        println("improvementUtility: " + improvementUtility)
-            println(s"Predicted Original Utility:   ${convolute_Utility_with_Particles(state.f_Q)}")
-            println(s"Predicted Prime Utility:      ${convolute_Utility_with_Particles(state.f_QPrime)}")
+            println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
+            println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
         }
 
         if (improvementUtility > voteUtility
@@ -472,6 +468,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         else { submit_final(); false }
     }
 
+    /* never chooses to submit until there isn't enough money left to do anything else */
     def dont_stop(): Boolean = {
         val artifactUtility    = utility_of_submitting()
         val voteUtility        = utility_of_voting()
@@ -482,8 +479,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
         if (print) {
             println(s"current balance:     ${state.balance}")
-            println(s"Predicted Original Utility:   ${convolute_Utility_with_Particles(state.f_Q)}")
-            println(s"Predicted Prime Utility:      ${convolute_Utility_with_Particles(state.f_QPrime)}")
+            println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
+            println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
         }
 
         if (improvementUtility > voteUtility && state.balance > exper.IMPROVEMENT_COST) {
