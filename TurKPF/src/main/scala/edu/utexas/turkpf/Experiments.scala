@@ -23,11 +23,11 @@ case class CONSTANTS() {
     def UTILITY_FUNCTION(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)
 
     var IMPROVEMENT_COST    = 1.0
-    var BALLOT_COST         = .15
+    var BALLOT_COST         = .5
     var DIFFICULTY_CONSTANT = 0.5
     var LOOKAHEAD_DEPTH     = 2
     var NUM_QUESTIONS       = 200
-    var INITIAL_BALANCE     = 10.0
+    var INITIAL_BALANCE     = 15.0
     var NUM_PARTICLES       = 500
     var LEARNING_RATE       = 0.05
     var UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
@@ -96,7 +96,7 @@ trait ExperimentRunner {
     val runner   = Runnit(exper)
     val curTime  = new java.text.SimpleDateFormat("MM-dd-hh-mm").format(new java.util.Date())
     var fileName = this.getClass.toString
-    fileName = fileName.drop(fileName.lastIndexOf(".")+1)
+    fileName     = fileName.drop(fileName.lastIndexOf(".") + 1)
     var searchAlgorithm = exper.USE_LOOKAHEAD
     def modifyConstants(): Unit = {}
     def run() {

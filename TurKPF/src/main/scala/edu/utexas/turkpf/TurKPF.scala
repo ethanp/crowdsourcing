@@ -183,7 +183,12 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                                    f_QPrime: PF = state.f_QPrime):
     Double = {
         val (orig_predicted, prime_predicted) = utility_of_stopping_voting(f_Q, f_QPrime)
-        max(orig_predicted, prime_predicted) + (state.balance - exper.IMPROVEMENT_COST) * exper.UTILITY_OF_$$$
+        if (orig_predicted > prime_predicted)
+            max(orig_predicted, convolute_Utility_with_Particles(f_Q)) +
+              (state.balance - exper.IMPROVEMENT_COST) * exper.UTILITY_OF_$$$
+        else
+            max(prime_predicted, convolute_Utility_with_Particles(f_QPrime)) +
+              (state.balance - exper.IMPROVEMENT_COST) * exper.UTILITY_OF_$$$
     }
 
     // [DTC] (eq. 9)
@@ -282,9 +287,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      * 4. Return vote
      */
     def ballot_job(output: String): Boolean = {
-        var sampleWorkerPool = exper.WORKER_DIST.sample
-        while (sampleWorkerPool < 0) sampleWorkerPool = exper.WORKER_DIST.sample
-        val vote = random < probability_of_yes_vote(gammaToUse = sampleWorkerPool)
+        var randomWorker = exper.WORKER_DIST.sample
+        while (randomWorker < 0) randomWorker = exper.WORKER_DIST.sample
+        val vote = random < probability_of_yes_vote(gammaToUse = randomWorker)
         state.votes ::= vote
         ifPrintln(s"vote :: ${vote.toString.toUpperCase} #L293\n")
         ifPrintln(state.votes.reverse.mkString("(",", ",")"))
@@ -468,6 +473,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     }
 
     def dont_stop(): Boolean = {
+        val artifactUtility    = utility_of_submitting()
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
 
@@ -479,16 +485,29 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             println(s"Predicted Original Utility:   ${convolute_Utility_with_Particles(state.f_Q)}")
             println(s"Predicted Prime Utility:      ${convolute_Utility_with_Particles(state.f_QPrime)}")
         }
+
         if (improvementUtility > voteUtility && state.balance > exper.IMPROVEMENT_COST) {
             ifPrintln("\n=> | IMPROVEMENT job |")
             improvement_job(dontPrint)
-            state.output.write(f"${utility_of_submitting()}%.2f\t")
+            val currentQuality = max(
+                state.f_Q.particles.sum / exper.NUM_PARTICLES,
+                state.f_QPrime.particles.sum / exper.NUM_PARTICLES
+            )
+            state.output.write(f"\nImprovement\t${utility_of_submitting()}%.2f\t${currentQuality}%.2f")
+            if (artifactUtility > improvementUtility)
+                state.output.write("\twouldHaveSubmitted")
             printEnd(); true
         }
         else if (state.balance > exper.BALLOT_COST) {
             ifPrintln("\n=> | BALLOT job |")
             ballot_job(dontPrint)
-            state.output.write(f"${utility_of_submitting()}%.2f\t")
+            val currentQuality = max(
+                state.f_Q.particles.sum / exper.NUM_PARTICLES,
+                state.f_QPrime.particles.sum / exper.NUM_PARTICLES
+            )
+            state.output.write(f"\nBallot\t${utility_of_submitting()}%.2f\t${currentQuality}%.2f")
+            if (artifactUtility > voteUtility)
+                state.output.write("\twouldHaveSubmitted")
             printEnd(); true
         }
         else { submit_final(); false }
