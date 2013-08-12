@@ -6,9 +6,9 @@ import scala.math._
 case class CONSTANTS() {
 
     // enum
-    val NO_LOOKAHEAD    = "0\t"
-    val USE_LOOKAHEAD   = "1\t"
-    val DONT_STOP       = "2\t"
+    val NO_LOOKAHEAD  = "0\t"
+    val USE_LOOKAHEAD = "1\t"
+    val DONT_SUBMIT   = "2\t"
 
     /* [DTC] gmX "follow a bell shaped distribution"
      *           "average error coefficient gm=1",
@@ -27,8 +27,8 @@ case class CONSTANTS() {
     var DIFFICULTY_CONSTANT = 0.5
     var LOOKAHEAD_DEPTH     = 2
     var NUM_QUESTIONS       = 200
-    var INITIAL_BALANCE     = 15.0
-    var NUM_PARTICLES       = 500
+    var INITIAL_BALANCE     = 6.0
+    var NUM_PARTICLES       = 1000
     var LEARNING_RATE       = 0.05
     var UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
@@ -82,11 +82,11 @@ case class Runnit(exper: CONSTANTS) {
             if (i == 1) qstn.state.output.write(exper.columnTitles)
             qstn.state.output.write(mode)
             qstn.state.output.write(exper.parameterValuesAsString)
-            if (mode == exper.NO_LOOKAHEAD)
-                while (qstn.dont_lookahead()){}
-            else if (mode == exper.DONT_STOP)
-                while (qstn.dont_stop()){}
-            else while (qstn.look_ahead()){}
+            mode match {
+                case exper.NO_LOOKAHEAD => while (qstn.dont_lookahead()){}
+                case exper.DONT_SUBMIT  => while (qstn.dont_submit()){}
+                case _                  => while (qstn.look_ahead()){}
+            }
         }
     }
 }
@@ -96,7 +96,7 @@ trait ExperimentRunner {
     val runner   = Runnit(exper)
     val curTime  = new java.text.SimpleDateFormat("MM-dd-hh-mm").format(new java.util.Date())
     var fileName = this.getClass.toString
-    fileName     = fileName.drop(fileName.lastIndexOf(".") + 1)
+    fileName     = fileName.drop(fileName.lastIndexOf(".")+1)
     var searchAlgorithm = exper.USE_LOOKAHEAD
     def modifyConstants(): Unit = {}
     def run() {
@@ -104,27 +104,8 @@ trait ExperimentRunner {
     }
 }
 
-/************* Experiments: **************/
+/************************ Experiments: *****************************/
 /* every variable defined in each experiment overrides the default */
-/* TODO: "this stub corresponds to 'this' experiment in the paper" */
-
-object SweepNumParticles extends App with ExperimentRunner {
-    fileName = "SweepNumParticles"
-    override def modifyConstants(): Unit = {
-        exper.NUM_PARTICLES += 100
-    }
-    run()
-}
-
-object SweepNumParticles2 extends App with ExperimentRunner {
-    fileName = "SweepNumParticles2"
-    exper.NUM_PARTICLES = 5
-    exper.NUM_QUESTIONS = 500
-    override def modifyConstants(): Unit = {
-        exper.NUM_PARTICLES += 1
-    }
-    run()
-}
 
 object JustRun200Times extends App with ExperimentRunner { run() }
 
@@ -133,10 +114,35 @@ object NoLookahead200Times extends App with ExperimentRunner {
     run()
 }
 
+object SweepNumParticles extends App with ExperimentRunner {
+    override def modifyConstants(): Unit = {
+        exper.NUM_PARTICLES += 100
+    }
+    run()
+}
+
+object SweepNumParticles2 extends App with ExperimentRunner {
+    exper.NUM_PARTICLES = 5
+    exper.NUM_QUESTIONS = 500
+    override def modifyConstants(): Unit = {
+        exper.NUM_PARTICLES += 1
+    }
+    run()
+}
+
+object SweepNumParticles3 extends App with ExperimentRunner {
+    exper.NUM_PARTICLES = 5
+    exper.NUM_QUESTIONS = 500
+    override def modifyConstants(): Unit = {
+        exper.NUM_PARTICLES += 25
+    }
+    run()
+}
+
 object SweepImpCost extends App with ExperimentRunner {
     exper.IMPROVEMENT_COST = .05
-    exper.INITIAL_BALANCE  = 15.0
-    exper.BALLOT_COST      = 1.0
+    exper.INITIAL_BALANCE = 15.0
+    exper.BALLOT_COST = 1.0
     override def modifyConstants(): Unit = {
         exper.IMPROVEMENT_COST += .05
     }
@@ -145,8 +151,8 @@ object SweepImpCost extends App with ExperimentRunner {
 
 object SweepImpCost2 extends App with ExperimentRunner {
     exper.IMPROVEMENT_COST = .05
-    exper.INITIAL_BALANCE  = 10.0
-    exper.BALLOT_COST      = 1.0
+    exper.INITIAL_BALANCE = 10.0
+    exper.BALLOT_COST = 1.0
     override def modifyConstants(): Unit = {
         exper.IMPROVEMENT_COST += .05
     }
@@ -155,8 +161,17 @@ object SweepImpCost2 extends App with ExperimentRunner {
 
 object SweepImpCost3 extends App with ExperimentRunner {
     exper.IMPROVEMENT_COST = .1
-    exper.INITIAL_BALANCE  = 100.0
-    exper.BALLOT_COST      = 3.0
+    exper.INITIAL_BALANCE = 100.0
+    exper.BALLOT_COST = 3.0
+    override def modifyConstants(): Unit = {
+        exper.IMPROVEMENT_COST += .1
+    }
+    run()
+}
+
+object SweepImpCost4 extends App with ExperimentRunner {
+    exper.IMPROVEMENT_COST = .1
+    exper.BALLOT_COST = 1.0
     override def modifyConstants(): Unit = {
         exper.IMPROVEMENT_COST += .1
     }
@@ -172,10 +187,32 @@ object SweepGmX extends App with ExperimentRunner {
     run()
 }
 
+object SweepGmX2 extends App with ExperimentRunner {
+    var i = .7
+    override def modifyConstants(): Unit = {
+        i += .03
+        exper.WORKER_DIST = new NormalDistribution(i, 0.2)
+    }
+    run()
+}
+
 object SweepLookaheadDepth extends App with ExperimentRunner {
     exper.LOOKAHEAD_DEPTH = 1
-    exper.NUM_QUESTIONS   = 250
-    exper.WORKER_DIST     = new NormalDistribution(5, 2)
+    exper.NUM_QUESTIONS = 250
+    exper.WORKER_DIST = new NormalDistribution(5, 2)
+    var i = 1
+    override def modifyConstants(): Unit = {
+        i += 1
+        if (i % 50 == 0)
+            exper.LOOKAHEAD_DEPTH += 1
+    }
+    run()
+}
+
+object SweepLookaheadDepth2 extends App with ExperimentRunner {
+    exper.LOOKAHEAD_DEPTH = 1
+    exper.NUM_QUESTIONS = 250
+    exper.WORKER_DIST = new NormalDistribution(5, 2)
     var i = 1
     override def modifyConstants(): Unit = {
         i += 1
@@ -188,6 +225,6 @@ object SweepLookaheadDepth extends App with ExperimentRunner {
 // plots current est'd utility, and doesn't submit until money runs out
 object UtilitySpendAllMoney extends App with ExperimentRunner {
     exper.NUM_QUESTIONS = 1
-    searchAlgorithm = exper.DONT_STOP
+    searchAlgorithm = exper.DONT_SUBMIT
     run()
 }

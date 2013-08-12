@@ -22,7 +22,7 @@ import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
-import UtilitySpendAllMoney._
+import SweepGmX2._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -163,10 +163,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     def utility_of_submitting(f_Q:      PF = state.f_Q,
                               f_QPrime: PF = state.f_QPrime):
-    Double = max(expected_utility(f_Q),
-                 expected_utility(f_QPrime)) + state.balance * exper.UTILITY_OF_$$$
+    Double = max(expected_utility(f_Q), expected_utility(f_QPrime)) +
+                state.balance * exper.UTILITY_OF_$$$
 
-    // the math for this checks out
     def expected_utility(pf: PF):
     Double = (0.0 /: pf.particles)(_ + exper.UTILITY_FUNCTION(_)) / exper.NUM_PARTICLES
 
@@ -240,9 +239,10 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         ) / exper.NUM_PARTICLES
     }
 
-    // I checked and this function works properly
-    def prob_true_given_Qs(q: Double, qPrime: Double, gammaToUse: Double = state.estGX): Double =
-        invertIfFalse(q < qPrime, wrkrs.accuracy(wrkrs.difficulty(q, qPrime), gammaToUse))
+    def prob_true_given_Qs(q:          Double,
+                           qPrime:     Double,
+                           gammaToUse: Double = state.estGX):
+    Double = invertIfFalse(q < qPrime, wrkrs.accuracy(wrkrs.difficulty(q, qPrime), gammaToUse))
 
     def expVal_after_a_vote(f: Boolean => PF,
                             probYes: Double):
@@ -301,7 +301,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         vote
     }
 
-    def invertIfFalse(t: Boolean, v: Double): Double = if (t) v else 1-v
+    def invertIfFalse(c: Boolean, v: Double): Double = if (c) v else 1-v
 
     /****************************** END BALLOT JOB STUFF **************************/
 
@@ -314,19 +314,15 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                         f_QPrime: PF,
                         balance:  Double):
     (PF, PF, Double) = {
-        val betterArtifact =
-            if (expected_utility(f_Q) > expected_utility(f_QPrime))
-                f_Q
-            else
-                f_QPrime
-
+        val primeBetter = expected_utility(f_Q) < expected_utility(f_QPrime)
+        val betterArtifact = if (primeBetter) f_QPrime else f_Q
         (betterArtifact, betterArtifact.predict, balance - exper.IMPROVEMENT_COST)
     }
 
     def improvement_job(output: String = "I") {
         // clear votes out
         wrkrs.updateGX(state.votes)
-        state.votes = List[Boolean]()
+        state.votes    = List[Boolean]()
         val newState   = improvement_job(state.f_Q, state.f_QPrime, state.balance)
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
@@ -350,9 +346,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             // all done, perform the first action from the
             // highest performing sequence of (affordable) actions:
             val bestRoute = lookaheadList.view
-              .filter(_.curBalance > 0.0)
-              .sortWith(_.utility > _.utility)
-              .head.actions.reverse
+                              .filter(_.curBalance > 0.0)
+                              .sortWith(_.utility > _.utility)
+                              .head.actions.reverse
 
             ifPrintln(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
 
@@ -441,25 +437,29 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         def printEnd() = ifPrintln("\n\n****************************************************")
 
         if (print) {
-            //        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
+            println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
+            println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
             println(s"current balance:     ${state.balance}")
     //        println("artifactUtility:    " + artifactUtility)
     //        println("voteUtility:        " + voteUtility)
     //        println("improvementUtility: " + improvementUtility)
-            println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
-            println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
+    //        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
         }
 
-        if (improvementUtility > voteUtility
-          && improvementUtility > artifactUtility
-          && state.balance > exper.IMPROVEMENT_COST)
+        val doImprovement = (improvementUtility > voteUtility
+                            && improvementUtility > artifactUtility
+                            && state.balance > exper.IMPROVEMENT_COST)
+
+        val doBallot      = (voteUtility > artifactUtility
+                            && state.balance > exper.BALLOT_COST)
+
+        if (doImprovement)
         {
             ifPrintln("\n=> | IMPROVEMENT job |")
 
             improvement_job(); printEnd(); true
         }
-        else if (voteUtility > artifactUtility
-               && state.balance > exper.BALLOT_COST)
+        else if (doBallot)
         {
             ifPrintln("\n=> | BALLOT job |")
 
@@ -469,7 +469,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     }
 
     /* never chooses to submit until there isn't enough money left to do anything else */
-    def dont_stop(): Boolean = {
+    def dont_submit(): Boolean = {
         val artifactUtility    = utility_of_submitting()
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
@@ -483,26 +483,30 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
         }
 
-        if (improvementUtility > voteUtility && state.balance > exper.IMPROVEMENT_COST) {
+        val doImprovement = (improvementUtility > voteUtility
+                        && state.balance > exper.IMPROVEMENT_COST)
+        val doBallot = state.balance > exper.BALLOT_COST
+
+        if (doImprovement) {
             ifPrintln("\n=> | IMPROVEMENT job |")
             improvement_job(dontPrint)
             val currentQuality = max(
                 state.f_Q.particles.sum / exper.NUM_PARTICLES,
                 state.f_QPrime.particles.sum / exper.NUM_PARTICLES
             )
-            state.output.write(f"\nImprovement\t${utility_of_submitting()}%.2f\t${currentQuality}%.2f")
+            state.output.write(f"\nImprovement\t${utility_of_submitting()}%.2f\t$currentQuality%.2f")
             if (artifactUtility > improvementUtility)
                 state.output.write("\twouldHaveSubmitted")
             printEnd(); true
         }
-        else if (state.balance > exper.BALLOT_COST) {
+        else if (doBallot) {
             ifPrintln("\n=> | BALLOT job |")
             ballot_job(dontPrint)
             val currentQuality = max(
                 state.f_Q.particles.sum / exper.NUM_PARTICLES,
                 state.f_QPrime.particles.sum / exper.NUM_PARTICLES
             )
-            state.output.write(f"\nBallot\t${utility_of_submitting()}%.2f\t${currentQuality}%.2f")
+            state.output.write(f"\nBallot\t${utility_of_submitting()}%.2f\t$currentQuality%.2f")
             if (artifactUtility > voteUtility)
                 state.output.write("\twouldHaveSubmitted")
             printEnd(); true
