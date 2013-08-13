@@ -222,6 +222,20 @@ object SweepLookaheadDepth2 extends App with ExperimentRunner {
     run()
 }
 
+object SweepLookaheadDepth3 extends App with ExperimentRunner {
+    exper.LOOKAHEAD_DEPTH = 1
+    exper.INITIAL_BALANCE = 3.0
+    exper.NUM_QUESTIONS = 120
+    exper.WORKER_DIST = new NormalDistribution(5, 2)
+    var i = 0
+    override def modifyConstants(): Unit = {
+        i += 1
+        if (i % 30 == 0)
+            exper.LOOKAHEAD_DEPTH += 1
+    }
+    run()
+}
+
 // plots current est'd utility, and doesn't submit until money runs out
 object UtilitySpendAllMoney extends App with ExperimentRunner {
     exper.NUM_QUESTIONS = 1

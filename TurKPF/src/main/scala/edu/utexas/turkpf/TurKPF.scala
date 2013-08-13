@@ -22,7 +22,7 @@ import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
-import SweepGmX2._
+import SweepLookaheadDepth3._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -75,7 +75,7 @@ case class PF(numParticles: Int, particles: Array[Double]) {
     }
 
     /* algorithm for sampling from given set of points with associated weights:
-     * generate a random number in [0,1), use the CDF of the weights to use the
+     * generate a random number in [0,1), use the CDF of the weights to measure against
      * random number to figure out what the sampled value is
      */
     def repopulate(weights: Array[Double]): Double = {
@@ -113,11 +113,10 @@ case class Workers(state: QuestionState) {
 
     // [DTC] (eq. 12)
     def dStar: Double = {
-        (0.0 /: state.f_Q.particles)((sum, q) =>
-            sum + (0.0 /: state.f_QPrime.particles)((sum2, qPrime) =>
-                sum2 + difficulty(q, state.qltyPrime)
-            )
-        ) / (exper.NUM_PARTICLES * exper.NUM_PARTICLES)
+        var sum = 0.0
+        for (pA <- state.f_Q.particles; pB <- state.f_QPrime.particles)
+            sum += difficulty(pA, pB)
+        sum / (exper.NUM_PARTICLES * exper.NUM_PARTICLES)
     }
 
     // higher GX means Worse worker
@@ -157,6 +156,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     val print = !(args contains "nostdout")
     def ifPrintln(s: String) { if (print) println(s) }
+    def printEnd() = ifPrintln("\n\n************************************************")
 
     // [DTC] trueGX > 0; code is worker_dist-agnostic
     val wrkrs = Workers(state)
@@ -222,21 +222,22 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     // [DTC] (bottom-left Pg. 4)
     /* PSEUDOCODE for calculating P(b_{n+1}):
-     * For each particle in the "normal" set
-     *  "Convolute" the [entire] "predicted" set of particles with the accuracy according to whether
-     *  the particle in the predicted set has a higher value than the one in the normal set (eq. 3)
-     *   This convolution will yield a scalar
-     * This [outer] summation will yield another scalar (our result, P(b_{n+1}))
+     * For each particle in the "normal" set "Convolute" the [entire]
+     *  "predicted" set of particles with the accuracy according to whether
+     *  the particle in the predicted set has a higher value than the one in
+     *  the normal set (eq. 3)
+     *    This convolution will yield a scalar
+     *  This [outer] summation will yield another scalar
+     *      (our result, P(b_{n+1}))
      */
     def probability_of_yes_vote(f_Q:        PF = state.f_Q,
                                 f_QPrime:   PF = state.f_QPrime,
                                 gammaToUse: Double = state.estGX):
     Double = {
-        (0.0 /: f_Q.particles)((sumA, particleA) =>
-            sumA + (0.0 /: f_QPrime.particles)((sumB, particleB) =>
-                sumB + prob_true_given_Qs(particleA, particleB, gammaToUse)
-            ) / exper.NUM_PARTICLES
-        ) / exper.NUM_PARTICLES
+        var sum = 0.0
+        for (pA <- f_Q.particles; pB <- f_QPrime.particles)
+            sum += prob_true_given_Qs(pA, pB, gammaToUse)
+        sum / (exper.NUM_PARTICLES * exper.NUM_PARTICLES)
     }
 
     def prob_true_given_Qs(q:          Double,
@@ -345,10 +346,17 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         if (currentDepth == exper.LOOKAHEAD_DEPTH) {
             // all done, perform the first action from the
             // highest performing sequence of (affordable) actions:
-            val bestRoute = lookaheadList.view
-                              .filter(_.curBalance > 0.0)
-                              .sortWith(_.utility > _.utility)
-                              .head.actions.reverse
+            var maxInd = 0
+            var maxUtil = lookaheadList.head.utility
+            for {
+                (l, index) <- lookaheadList.zipWithIndex
+                if l.utility > maxUtil
+                if l.curBalance > 0.0
+            } {
+                maxUtil = l.utility
+                maxInd  = index
+            }
+            val bestRoute = lookaheadList(maxInd).actions.reverse
 
             ifPrintln(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
 
@@ -380,16 +388,19 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             case "improve" => {
                 ifPrintln("improvement")
                 improvement_job()
+                printEnd()
                 true
             }
             case "ballot" =>  {
                 ifPrintln("ballot")
                 ballot_job("B")
+                printEnd()
                 true
             }
             case "submit" =>  {
-                ifPrintln("SUBMIT\n\n**********************************************************")
+                ifPrintln("SUBMIT")
                 submit_final()
+                printEnd()
                 false
             }
             case _ => throw new RuntimeException
@@ -434,7 +445,6 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
 
-        def printEnd() = ifPrintln("\n\n****************************************************")
 
         if (print) {
             println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
@@ -453,19 +463,24 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         val doBallot      = (voteUtility > artifactUtility
                             && state.balance > exper.BALLOT_COST)
 
-        if (doImprovement)
-        {
+        if (doImprovement) {
             ifPrintln("\n=> | IMPROVEMENT job |")
-
-            improvement_job(); printEnd(); true
+            improvement_job()
+            printEnd()
+            true
         }
-        else if (doBallot)
-        {
+        else if (doBallot) {
             ifPrintln("\n=> | BALLOT job |")
-
-            ballot_job("B"); printEnd(); true
+            ballot_job("B")
+            printEnd()
+            true
         }
-        else { submit_final(); false }
+        else {
+            ifPrintln("\n=> | SUBMIT |")
+            submit_final()
+            printEnd()
+            false
+        }
     }
 
     /* never chooses to submit until there isn't enough money left to do anything else */
@@ -475,7 +490,6 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         val improvementUtility = utility_of_improvement_job()
 
         val dontPrint = ""
-        def printEnd() = ifPrintln("\n\n****************************************************")
 
         if (print) {
             println(s"current balance:     ${state.balance}")
