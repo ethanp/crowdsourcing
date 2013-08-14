@@ -346,7 +346,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         if (currentDepth == exper.LOOKAHEAD_DEPTH) {
             // all done, perform the first action from the
             // highest performing sequence of (affordable) actions:
-            val bestRoute = lookaheadList
+            val bestRoute = lookaheadList.view
               .filterNot(_.curBalance < 0.0)
               .maxBy(_.utility)
               .actions.reverse
