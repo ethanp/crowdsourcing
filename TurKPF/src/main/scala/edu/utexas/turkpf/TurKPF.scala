@@ -346,17 +346,10 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         if (currentDepth == exper.LOOKAHEAD_DEPTH) {
             // all done, perform the first action from the
             // highest performing sequence of (affordable) actions:
-            var maxInd = 0
-            var maxUtil = lookaheadList.head.utility
-            for {
-                (l, index) <- lookaheadList.zipWithIndex
-                if l.utility > maxUtil
-                if l.curBalance > 0.0
-            } {
-                maxUtil = l.utility
-                maxInd  = index
-            }
-            val bestRoute = lookaheadList(maxInd).actions.reverse
+            val bestRoute = lookaheadList
+              .filterNot(_.curBalance < 0.0)
+              .maxBy(_.utility)
+              .actions.reverse
 
             ifPrintln(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
 
