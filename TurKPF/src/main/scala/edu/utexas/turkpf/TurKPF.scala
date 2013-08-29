@@ -19,6 +19,7 @@ import math._
 import org.apache.commons.math3.distribution.BetaDistribution
 import scala.annotation.tailrec
 import scala.util.Random
+import scala.language.implicitConversions
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
@@ -90,7 +91,7 @@ case class PF(numParticles: Int, particles: Array[Double]) {
         particles(particles.length-1)
     }
 
-    def getAverageValue = (0.0 /: particles)(_+_) / numParticles
+    def getAverageValue = particles.sum / numParticles
 
     implicit def addNorm(a: Array[Double]): addNorm = {
         new addNorm(a) {
@@ -214,7 +215,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                           gammaToUse: Double = state.estGX):
     Double = {
         val probYes = probability_of_yes_vote(f_Q, f_QPrime, gammaToUse)
-        ifPrintln(s"probYes: $probYes")
+        ifPrintln(s"Estd ProbYes: $probYes")
         max(
             expVal_after_a_vote(dist_Q_after_vote(f_Q, f_QPrime), probYes),
             expVal_after_a_vote(dist_QPrime_after_vote(f_Q, f_QPrime), probYes)
@@ -346,7 +347,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
         // 4. using randomly sampled worker, improve artifact
         val mu = PF(0, null).find_improvementFunctionMean(state.alpha)
-        state.alphaPrime = new BetaDistribution(10 * mu, 10 * (1 - mu)).sample
+        state.alphaPrime = new BetaDistribution(10*mu, 10*(1-mu)).sample(3).sum/3
 
         // 5. (in sub-method) update f_Q and f_QPrime and pay for it
         val newState   = update_dists_after_imprvmt(state.f_Q, state.f_QPrime, state.balance)
