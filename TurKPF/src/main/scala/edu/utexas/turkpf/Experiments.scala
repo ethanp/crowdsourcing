@@ -27,7 +27,7 @@ case class CONSTANTS() {
     def UTILITY_FUNCTION(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)
 
     var IMPROVEMENT_COST    = 1.0
-    var BALLOT_COST         = .5
+    var BALLOT_COST         = .3
     var DIFFICULTY_CONSTANT = 0.5
     var LOOKAHEAD_DEPTH     = 2
     var NUM_QUESTIONS       = 200

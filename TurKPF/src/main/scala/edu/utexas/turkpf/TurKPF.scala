@@ -90,6 +90,8 @@ case class PF(numParticles: Int, particles: Array[Double]) {
         particles(particles.length-1)
     }
 
+    def getAverageValue = (0.0 /: particles)(_+_) / numParticles
+
     implicit def addNorm(a: Array[Double]): addNorm = {
         new addNorm(a) {
             def normalize = {
@@ -167,8 +169,17 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     def expected_utility(pf: PF):
     Double = (0.0 /: pf.particles)(_ + exper.UTILITY_FUNCTION(_)) / exper.NUM_PARTICLES
 
+    def getFinalUtility: Double = {
+        val bestGuessAtBetterArtifact =
+            if (expected_utility(state.f_Q) > expected_utility(state.f_QPrime))
+                state.alpha
+            else
+                state.alphaPrime
+        exper.UTILITY_FUNCTION(bestGuessAtBetterArtifact)
+    }
+
     def submit_final(output: String = "S\t") = {
-        val finalUtility = utility_of_submitting()
+        val finalUtility = getFinalUtility
         ifPrintln(f"Final Utility: $finalUtility%.2f")
         state.output.write(output)
         state.output.write(f"$finalUtility%.2f\n")
@@ -454,10 +465,21 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
 
         if (print) {
-            println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
-            println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
-            println(s"True Alpha Quality:           ${state.alpha}")
-            println(s"True AlphaPrime Quality:      ${state.alphaPrime}")
+            val eaq = state.f_Q.getAverageValue
+            val taq = state.alpha
+            val eaqp = state.f_QPrime.getAverageValue
+            val taqp = state.alphaPrime
+            val fd = eaq - taq
+            val pd = eaqp - taqp
+            println(f"Estd Alpha Quality:           ${eaq}%.2f")
+            println(f"True Alpha Quality:           ${taq}%.2f")
+            println(f"Estd AlphaPrime Quality:      ${eaqp}%.2f")
+            println(f"True AlphaPrime Quality:      ${taqp}%.2f")
+            println(f"                 First Diff = ${fd}%.2f")
+            println(f"                 Prime Diff = ${pd}%.2f")
+            println(f" Avg Diff = ${(fd+pd)/2}%.2f")
+//            println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
+//            println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
 //            println(s"current balance:     ${state.balance}")
     //        println("artifactUtility:    " + artifactUtility)
     //        println("voteUtility:        " + voteUtility)
