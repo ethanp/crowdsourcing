@@ -191,18 +191,10 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     // [DTC] (eq. 9)
     def utility_of_stopping_voting(f_Q:      PF = state.f_Q,
                                    f_QPrime: PF = state.f_QPrime):
-    (Double, Double) = {
-        val orig_predicted  = expected_utility(f_Q.predict)
-        val prime_predicted = expected_utility(f_QPrime.predict)
-        ifPrintln(
-            if (f_Q == state.f_Q)
-                s"Predicted Original Utility:   $orig_predicted" +
-                s"Predicted Prime Utility:      $prime_predicted"
-
-            else ""
-        )
-        (orig_predicted, prime_predicted)
-    }
+    (Double, Double) = {(
+      expected_utility(f_Q.predict),
+      expected_utility(f_QPrime.predict)
+    )}
 
     /***************************** BALLOT JOB STUFF *******************************/
     // [DTC] (bottom-left Pg. 4) ;  i.e.  E[ U( Q | b_{n} + 1 ) ]
@@ -281,20 +273,18 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             case v if v == None => random < probability_of_yes_vote(f_Q, f_QPrime)
             case v => v.asInstanceOf[Boolean]
         }
-        update_dists_after_vote(f_Q, f_QPrime, balance, vote)
+        update_dists_after_vote(f_Q, f_QPrime, balance, theVote)
     }
 
     def update_dists_after_vote(f_Q:      PF,
                                 f_QPrime: PF,
                                 balance:  Double,
                                 vote:     Boolean):
-    (PF, PF, Double) = {
-        (
-          dist_Q_after_vote(f_Q, f_QPrime)(vote),
-          dist_QPrime_after_vote(f_Q, f_QPrime)(vote),
-          balance - exper.BALLOT_COST
-        )
-    }
+    (PF, PF, Double) = {(
+        dist_Q_after_vote(f_Q, f_QPrime)(vote),
+        dist_QPrime_after_vote(f_Q, f_QPrime)(vote),
+        balance - exper.BALLOT_COST
+    )}
 
     /**
      * 1. Pay for it
@@ -302,7 +292,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      * 3. Update distributions
      * 4. Return vote
      */
-    def real_ballot_job(output: String): Boolean = {
+    def real_ballot_job(output: String = "B"): Boolean = {
         var randomWorker = exper.WORKER_DIST.sample
         while (randomWorker < 0) randomWorker = exper.WORKER_DIST.sample
         val vote = random < prob_yes_for_simulation(gammaToUse = randomWorker)
@@ -310,10 +300,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         ifPrintln(s"vote :: ${vote.toString.toUpperCase}\n")
         ifPrintln(state.votes.reverse.mkString("(",", ",")"))
 
-         /* TODO I think I fixed this
-          *   what it should do now is still update ( f_Q , f_QPrime )
-          *   but it should be taking ( alpha , alphaPrime ) as parameters
-          */
+        /* TODO I think I fixed this */
         val newState   = update_dists_after_vote(state.f_Q, state.f_QPrime, state.balance, vote)
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
@@ -326,29 +313,32 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     /****************************** END BALLOT JOB STUFF **************************/
 
-    /*
-     * 1. pay for it
-     * 2. choose to continue with alpha or alphaPrime [DTC top-right pg. 4]
-     * 3. create new prior for quality of improved artifact
-     */
-    def improvement_job(f_Q:      PF,
-                        f_QPrime: PF,
-                        balance:  Double):
+    def update_dists_after_imprvmt(f_Q:      PF,
+                                   f_QPrime: PF,
+                                   balance:  Double):
     (PF, PF, Double) = {
         val primeBetter = expected_utility(f_Q) < expected_utility(f_QPrime)
         val betterArtifact = if (primeBetter) f_QPrime else f_Q
         (betterArtifact, betterArtifact.predict, balance - exper.IMPROVEMENT_COST)
     }
 
-    /**
-     * this happens according to the workers that we have in the population
-     * so we must randomly sample a worker, and use him/her
-     */
     def improvement_job(output: String = "I") {
-        // clear votes out
+        // 1. update estimate of worker-error with vote-list
         wrkrs.updateGX(state.votes)
+
+        // 2. clear vote list
         state.votes    = List[Boolean]()
-        val newState   = improvement_job(state.f_Q, state.f_QPrime, state.balance)
+
+        // 3. choose to continue with alpha or alphaPrime [DTC top-right pg. 4]
+        val primeBetter = expected_utility(state.f_Q) < expected_utility(state.f_QPrime)
+        state.alpha = if (primeBetter) state.alphaPrime else state.alpha
+
+        // 4. using randomly sampled worker, improve artifact
+        val mu = PF(0, null).find_improvementFunctionMean(state.alpha)
+        state.alphaPrime = new BetaDistribution(10 * mu, 10 * (1 - mu)).sample
+
+        // 5. (in sub-method) update f_Q and f_QPrime and pay for it
+        val newState   = update_dists_after_imprvmt(state.f_Q, state.f_QPrime, state.balance)
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
@@ -410,7 +400,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             }
             case "ballot" =>  {
                 ifPrintln("ballot")
-                real_ballot_job("B")
+                real_ballot_job()
                 printEnd()
                 true
             }
@@ -434,7 +424,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                     (PF, PF, Double) = action match {
 
                         case "improve" =>
-                            improvement_job(route.f_Q, route.f_QPrime, route.curBalance)
+                            update_dists_after_imprvmt(route.f_Q, route.f_QPrime, route.curBalance)
 
                         case "ballot" =>
                             simulate_ballot_job(route.f_Q, route.f_QPrime, route.curBalance)
@@ -490,7 +480,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         }
         else if (doBallot) {
             ifPrintln("\n=> | BALLOT job |")
-            real_ballot_job("B")
+            real_ballot_job()
             printEnd()
             true
         }

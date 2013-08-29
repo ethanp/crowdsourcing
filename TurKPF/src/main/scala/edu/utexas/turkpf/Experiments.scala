@@ -115,8 +115,9 @@ trait ExperimentRunner {
 
 object JustRun200Times extends App with ExperimentRunner { run() }
 
-object NoLookahead200Times extends App with ExperimentRunner {
+object NoLookaheadNTimes extends App with ExperimentRunner {
     searchAlgorithm = exper.NO_LOOKAHEAD
+    exper.NUM_QUESTIONS = 20
     run()
 }
 
