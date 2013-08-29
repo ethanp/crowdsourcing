@@ -22,7 +22,7 @@ import scala.util.Random
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
-import SweepLookaheadDepth3._
+import JustRun200Times._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -135,18 +135,16 @@ case class QuestionState(outFile: String) {
     /* This is a value we'd have to use machine learning on real data to obtain
      * It can be altered to test robustness under varying "true" distributions
      */
-    var estGX     = 1.0
-    var balance   = exper.INITIAL_BALANCE
-    var qlty      = exper.INITIAL_QUALITY
-    var qltyPrime = 0.0
-    var votes     = List[Boolean]()
-    var f_Q       = new PF  // defaults to BetaDist(1,9)
+    var estGX      = 1.0
+    var balance    = exper.INITIAL_BALANCE
+    var alpha      = exper.INITIAL_QUALITY
+    var alphaPrime = exper.INITIAL_QUALITY_PRIME
+    var votes      = List[Boolean]()
+    var f_Q        = new PF  // defaults to BetaDist(1,9)
 
     // [DTC] § Experimental Setup
     // initialize the qPrime prior a little higher than the q prior
-    var f_QPrime  = new PF(
-        new BetaDistribution(2,9).sample(exper.NUM_PARTICLES)
-    )
+    var f_QPrime  = new PF(exper.INITIAL_QUALITY_PRIME_DIST.sample(exper.NUM_PARTICLES))
     val output: FileWriter = new FileWriter(outFile, true)
 }
 
@@ -230,8 +228,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      *  This [outer] summation will yield another scalar
      *      (our result, P(b_{n+1}))
      */
-    def probability_of_yes_vote(f_Q:        PF = state.f_Q,
-                                f_QPrime:   PF = state.f_QPrime,
+    def probability_of_yes_vote(f_Q:        PF,
+                                f_QPrime:   PF,
                                 gammaToUse: Double = state.estGX):
     Double = {
         var sum = 0.0
@@ -239,6 +237,13 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             sum += prob_true_given_Qs(pA, pB, gammaToUse)
         sum / (exper.NUM_PARTICLES * exper.NUM_PARTICLES)
     }
+
+    /*
+     * we must find the probability that a simulated person will vote "true"
+     * given the "true" underlying qualities of the artifacts
+     */
+    def prob_yes_for_simulation(gammaToUse: Double) : Double =
+        prob_true_given_Qs(state.alpha, state.alphaPrime, gammaToUse)
 
     def prob_true_given_Qs(q:          Double,
                            qPrime:     Double,
@@ -267,18 +272,28 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
 
     // [DTC] (eqs. 4,5,6,7,8)
-    def ballot_job(f_Q:      PF,
-                   f_QPrime: PF,
-                   balance:  Double,
-                   vote:     Any = None):
+    def simulate_ballot_job(f_Q:      PF,
+                            f_QPrime: PF,
+                            balance:  Double,
+                            vote:     Any = None):
     (PF, PF, Double) = {
         val theVote: Boolean = vote match {
             case v if v == None => random < probability_of_yes_vote(f_Q, f_QPrime)
             case v => v.asInstanceOf[Boolean]
         }
-        (dist_Q_after_vote(f_Q, f_QPrime)(theVote),
-         dist_QPrime_after_vote(f_Q, f_QPrime)(theVote),
-         balance - exper.BALLOT_COST)
+        update_dists_after_vote(f_Q, f_QPrime, balance, vote)
+    }
+
+    def update_dists_after_vote(f_Q:      PF,
+                                f_QPrime: PF,
+                                balance:  Double,
+                                vote:     Boolean):
+    (PF, PF, Double) = {
+        (
+          dist_Q_after_vote(f_Q, f_QPrime)(vote),
+          dist_QPrime_after_vote(f_Q, f_QPrime)(vote),
+          balance - exper.BALLOT_COST
+        )
     }
 
     /**
@@ -287,14 +302,19 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      * 3. Update distributions
      * 4. Return vote
      */
-    def ballot_job(output: String): Boolean = {
+    def real_ballot_job(output: String): Boolean = {
         var randomWorker = exper.WORKER_DIST.sample
         while (randomWorker < 0) randomWorker = exper.WORKER_DIST.sample
-        val vote = random < probability_of_yes_vote(gammaToUse = randomWorker)
+        val vote = random < prob_yes_for_simulation(gammaToUse = randomWorker)
         state.votes ::= vote
-        ifPrintln(s"vote :: ${vote.toString.toUpperCase} #L293\n")
+        ifPrintln(s"vote :: ${vote.toString.toUpperCase}\n")
         ifPrintln(state.votes.reverse.mkString("(",", ",")"))
-        val newState   = ballot_job(state.f_Q, state.f_QPrime, state.balance, vote)
+
+         /* TODO I think I fixed this
+          *   what it should do now is still update ( f_Q , f_QPrime )
+          *   but it should be taking ( alpha , alphaPrime ) as parameters
+          */
+        val newState   = update_dists_after_vote(state.f_Q, state.f_QPrime, state.balance, vote)
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
         state.balance  = newState._3
@@ -320,6 +340,10 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         (betterArtifact, betterArtifact.predict, balance - exper.IMPROVEMENT_COST)
     }
 
+    /**
+     * this happens according to the workers that we have in the population
+     * so we must randomly sample a worker, and use him/her
+     */
     def improvement_job(output: String = "I") {
         // clear votes out
         wrkrs.updateGX(state.votes)
@@ -347,9 +371,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             // all done, perform the first action from the
             // highest performing sequence of (affordable) actions:
             val bestRoute = lookaheadList.view
-              .filterNot(_.curBalance < 0.0)
-              .maxBy(_.utility)
-              .actions.reverse
+                              .filterNot(_.curBalance < 0.0)
+                              .maxBy(_.utility)
+                              .actions.reverse
 
             ifPrintln(bestRoute.mkString("\n\nBest Path: ", ", ", ""))
 
@@ -386,7 +410,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             }
             case "ballot" =>  {
                 ifPrintln("ballot")
-                ballot_job("B")
+                real_ballot_job("B")
                 printEnd()
                 true
             }
@@ -413,7 +437,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                             improvement_job(route.f_Q, route.f_QPrime, route.curBalance)
 
                         case "ballot" =>
-                            ballot_job(route.f_Q, route.f_QPrime, route.curBalance)
+                            simulate_ballot_job(route.f_Q, route.f_QPrime, route.curBalance)
 
                         case "submit" =>
                             (route.f_Q, route.f_QPrime, route.curBalance)
@@ -442,7 +466,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         if (print) {
             println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
             println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
-            println(s"current balance:     ${state.balance}")
+            println(s"True Alpha Quality:           ${state.alpha}")
+            println(s"True AlphaPrime Quality:      ${state.alphaPrime}")
+//            println(s"current balance:     ${state.balance}")
     //        println("artifactUtility:    " + artifactUtility)
     //        println("voteUtility:        " + voteUtility)
     //        println("improvementUtility: " + improvementUtility)
@@ -464,7 +490,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         }
         else if (doBallot) {
             ifPrintln("\n=> | BALLOT job |")
-            ballot_job("B")
+            real_ballot_job("B")
             printEnd()
             true
         }
@@ -508,7 +534,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         }
         else if (doBallot) {
             ifPrintln("\n=> | BALLOT job |")
-            ballot_job(dontPrint)
+            real_ballot_job(dontPrint)
             val currentQuality = max(
                 state.f_Q.particles.sum / exper.NUM_PARTICLES,
                 state.f_QPrime.particles.sum / exper.NUM_PARTICLES

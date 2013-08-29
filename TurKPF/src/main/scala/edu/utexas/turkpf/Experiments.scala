@@ -1,6 +1,6 @@
 package edu.utexas.turkpf
 
-import org.apache.commons.math3.distribution.NormalDistribution
+import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
 import scala.math._
 
 case class CONSTANTS() {
@@ -17,7 +17,11 @@ case class CONSTANTS() {
 
     /* this is a method so that it can be set to generate a random
      * initial quality every time a question starts */
-    def INITIAL_QUALITY     = .01 // new BetaDistribution(1,9).sample
+    def INITIAL_QUALITY_DIST       = new BetaDistribution(1,9) // .01
+    def INITIAL_QUALITY_PRIME_DIST = new BetaDistribution(2,9)
+
+    val INITIAL_QUALITY            = INITIAL_QUALITY_DIST.sample         // i.e. \alpha_0
+    val INITIAL_QUALITY_PRIME      = INITIAL_QUALITY_PRIME_DIST.sample   // i.e. \alpha'_0
 
     // [DTC] § Experimental Setup, i.e. U(q)
     def UTILITY_FUNCTION(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)
@@ -66,10 +70,12 @@ case class CONSTANTS() {
     }
 }
 
+/*
 object TestThatItRuns extends App {
     val qstn = Question(/* default args */)
     while(qstn.dont_lookahead()){}
 }
+*/
 
 case class Runnit(exper: CONSTANTS) {
     var qstn = Question()
