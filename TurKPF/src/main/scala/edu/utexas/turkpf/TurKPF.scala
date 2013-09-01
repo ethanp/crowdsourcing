@@ -23,7 +23,7 @@ import scala.language.implicitConversions
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
-import JustRun200Times._
+import UtilitySpendAllMoney._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -91,7 +91,7 @@ case class PF(numParticles: Int, particles: Array[Double]) {
         particles(particles.length-1)
     }
 
-    def getAverageValue = particles.sum / numParticles
+    def average = particles.sum / numParticles
 
     implicit def addNorm(a: Array[Double]): addNorm = {
         new addNorm(a) {
@@ -135,9 +135,6 @@ case class Workers(state: QuestionState) {
 }
 
 case class QuestionState(outFile: String) {
-    /* This is a value we'd have to use machine learning on real data to obtain
-     * It can be altered to test robustness under varying "true" distributions
-     */
     var estGX      = 1.0
     var balance    = exper.INITIAL_BALANCE
     var alpha      = exper.INITIAL_QUALITY
@@ -171,12 +168,12 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     Double = (0.0 /: pf.particles)(_ + exper.UTILITY_FUNCTION(_)) / exper.NUM_PARTICLES
 
     def getFinalUtility: Double = {
-        val bestGuessAtBetterArtifact =
+        val artifactToSubmit =
             if (expected_utility(state.f_Q) > expected_utility(state.f_QPrime))
                 state.alpha
             else
                 state.alphaPrime
-        exper.UTILITY_FUNCTION(bestGuessAtBetterArtifact)
+        exper.UTILITY_FUNCTION(artifactToSubmit)
     }
 
     def submit_final(output: String = "S\t") = {
@@ -246,8 +243,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
      * we must find the probability that a simulated person will vote "true"
      * given the "true" underlying qualities of the artifacts
      */
-    def prob_yes_for_simulation(gammaToUse: Double) : Double =
-        prob_true_given_Qs(state.alpha, state.alphaPrime, gammaToUse)
+    def prob_yes_for_simulation(gammaToUse: Double) :
+    Double = prob_true_given_Qs(state.alpha, state.alphaPrime, gammaToUse)
 
     def prob_true_given_Qs(q:          Double,
                            qPrime:     Double,
@@ -278,13 +275,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     // [DTC] (eqs. 4,5,6,7,8)
     def simulate_ballot_job(f_Q:      PF,
                             f_QPrime: PF,
-                            balance:  Double,
-                            vote:     Any = None):
+                            balance:  Double):
     (PF, PF, Double) = {
-        val theVote: Boolean = vote match {
-            case v if v == None => random < probability_of_yes_vote(f_Q, f_QPrime)
-            case v => v.asInstanceOf[Boolean]
-        }
+        val theVote: Boolean = random < probability_of_yes_vote(f_Q, f_QPrime)
         update_dists_after_vote(f_Q, f_QPrime, balance, theVote)
     }
 
@@ -466,9 +459,9 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
 
         if (print) {
-            val eaq = state.f_Q.getAverageValue
+            val eaq = state.f_Q.average
             val taq = state.alpha
-            val eaqp = state.f_QPrime.getAverageValue
+            val eaqp = state.f_QPrime.average
             val taqp = state.alphaPrime
             val fd = eaq - taq
             val pd = eaqp - taqp
@@ -521,7 +514,17 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
 
-        val dontPrint = ""
+        lazy val logString =
+            f"RealUtility\t$getFinalUtility%.2f\t" +
+            f"RealQuality\t${
+                  max(state.alpha,
+                      state.alphaPrime)}%.2f\t" +
+            f"EstUtility\t${
+                  max(expected_utility(state.f_Q),
+                      expected_utility(state.f_QPrime))}%.2f\t" +
+            f"EstQuality\t${
+                  max(state.f_Q.average,
+                      state.f_QPrime.average)}%.2f\t"
 
         if (print) {
             println(s"current balance:     ${state.balance}")
@@ -535,24 +538,20 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
         if (doImprovement) {
             ifPrintln("\n=> | IMPROVEMENT job |")
-            improvement_job(dontPrint)
-            val currentQuality = max(
-                state.f_Q.particles.sum / exper.NUM_PARTICLES,
-                state.f_QPrime.particles.sum / exper.NUM_PARTICLES
-            )
-            state.output.write(f"\nImprovement\t${utility_of_submitting()}%.2f\t$currentQuality%.2f")
+            improvement_job(output = "")
+
+            state.output.write(f"\nImprovement\t" + logString)
+
             if (artifactUtility > improvementUtility)
                 state.output.write("\twouldHaveSubmitted")
             printEnd(); true
         }
         else if (doBallot) {
             ifPrintln("\n=> | BALLOT job |")
-            real_ballot_job(dontPrint)
-            val currentQuality = max(
-                state.f_Q.particles.sum / exper.NUM_PARTICLES,
-                state.f_QPrime.particles.sum / exper.NUM_PARTICLES
-            )
-            state.output.write(f"\nBallot\t${utility_of_submitting()}%.2f\t$currentQuality%.2f")
+            real_ballot_job(output = "")
+
+            state.output.write(f"\nBallot\t" + logString)
+
             if (artifactUtility > voteUtility)
                 state.output.write("\twouldHaveSubmitted")
             printEnd(); true
