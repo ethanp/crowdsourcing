@@ -1,6 +1,6 @@
 package edu.utexas.turkpf
 
-import org.apache.commons.math3.distribution.NormalDistribution
+import org.apache.commons.math3.distribution.{BetaDistribution, NormalDistribution}
 import scala.math._
 
 case class CONSTANTS() {
@@ -17,18 +17,22 @@ case class CONSTANTS() {
 
     /* this is a method so that it can be set to generate a random
      * initial quality every time a question starts */
-    def INITIAL_QUALITY     = .01 // new BetaDistribution(1,9).sample
+    def INITIAL_QUALITY_DIST       = new BetaDistribution(1,9) // .01
+    def INITIAL_QUALITY_PRIME_DIST = new BetaDistribution(2,9)
+
+    val INITIAL_QUALITY            = INITIAL_QUALITY_DIST.sample         // i.e. \alpha_0
+    val INITIAL_QUALITY_PRIME      = INITIAL_QUALITY_PRIME_DIST.sample   // i.e. \alpha'_0
 
     // [DTC] § Experimental Setup, i.e. U(q)
     def UTILITY_FUNCTION(qlty: Double): Double = 1000 * (exp(qlty) - 1) / (exp(1) - 1)
 
     var IMPROVEMENT_COST    = 1.0
-    var BALLOT_COST         = .5
+    var BALLOT_COST         = .3
     var DIFFICULTY_CONSTANT = 0.5
     var LOOKAHEAD_DEPTH     = 2
     var NUM_QUESTIONS       = 200
-    var INITIAL_BALANCE     = 6.0
-    var NUM_PARTICLES       = 1000
+    var INITIAL_BALANCE     = 15.0
+    var NUM_PARTICLES       = 400
     var LEARNING_RATE       = 0.05
     var UTILITY_OF_$$$      = 1.0  // let's just say it's "1.0" for simplicity
 
@@ -65,12 +69,12 @@ case class CONSTANTS() {
         s"${UTILITY_OF_$$$}\t"
     }
 }
-
+/*
 object TestThatItRuns extends App {
     val qstn = Question(/* default args */)
     while(qstn.dont_lookahead()){}
 }
-
+*/
 case class Runnit(exper: CONSTANTS) {
     var qstn = Question()
     def run(modifyConstants: () => Unit,
@@ -130,11 +134,12 @@ object SweepNumParticles2 extends App with ExperimentRunner {
     run()
 }
 
+/* make a graph of the num_particles from the data */
 object SweepNumParticles3 extends App with ExperimentRunner {
     exper.NUM_PARTICLES = 5
-    exper.NUM_QUESTIONS = 500
+    exper.NUM_QUESTIONS = 120
     override def modifyConstants(): Unit = {
-        exper.NUM_PARTICLES += 25
+        exper.NUM_PARTICLES = (exper.NUM_PARTICLES * 1.07).toInt + 1
     }
     run()
 }
@@ -151,7 +156,7 @@ object SweepImpCost extends App with ExperimentRunner {
 
 object SweepImpCost2 extends App with ExperimentRunner {
     exper.IMPROVEMENT_COST = .05
-    exper.INITIAL_BALANCE = 10.0
+    exper.INITIAL_BALANCE = 100.0
     exper.BALLOT_COST = 1.0
     override def modifyConstants(): Unit = {
         exper.IMPROVEMENT_COST += .05
@@ -160,6 +165,7 @@ object SweepImpCost2 extends App with ExperimentRunner {
 }
 
 object SweepImpCost3 extends App with ExperimentRunner {
+    searchAlgorithm = exper.NO_LOOKAHEAD
     exper.IMPROVEMENT_COST = .1
     exper.INITIAL_BALANCE = 100.0
     exper.BALLOT_COST = 3.0
@@ -181,7 +187,7 @@ object SweepImpCost4 extends App with ExperimentRunner {
 object SweepGmX extends App with ExperimentRunner {
     var i = .1
     override def modifyConstants(): Unit = {
-        i += .03
+        i += .04
         exper.WORKER_DIST = new NormalDistribution(i, 0.2)
     }
     run()
@@ -224,7 +230,6 @@ object SweepLookaheadDepth2 extends App with ExperimentRunner {
 
 object SweepLookaheadDepth3 extends App with ExperimentRunner {
     exper.LOOKAHEAD_DEPTH = 1
-    exper.INITIAL_BALANCE = 3.0
     exper.NUM_QUESTIONS = 120
     exper.WORKER_DIST = new NormalDistribution(5, 2)
     var i = 0
