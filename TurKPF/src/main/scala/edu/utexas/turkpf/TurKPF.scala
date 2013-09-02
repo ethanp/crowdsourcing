@@ -23,7 +23,7 @@ import scala.language.implicitConversions
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
-import UtilitySpendAllMoney._
+import NoLookahead200Times._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -159,8 +159,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     // [DTC] trueGX > 0; code is worker_dist-agnostic
     val wrkrs = Workers(state)
 
-    def utility_of_submitting(f_Q:      PF = state.f_Q,
-                              f_QPrime: PF = state.f_QPrime):
+    def est_utility_of_submitting(f_Q:      PF = state.f_Q,
+                                  f_QPrime: PF = state.f_QPrime):
     Double = max(expected_utility(f_Q), expected_utility(f_QPrime)) +
                 state.balance * exper.UTILITY_OF_$$$
 
@@ -304,8 +304,6 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         state.votes ::= vote
         ifPrintln(s"vote :: ${vote.toString.toUpperCase}\n")
         ifPrintln(state.votes.reverse.mkString("(",", ",")"))
-
-        /* TODO I think I fixed this */
         val newState   = update_dists_after_vote(state.f_Q, state.f_QPrime, state.balance, vote)
         state.f_Q      = newState._1
         state.f_QPrime = newState._2
@@ -366,7 +364,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             // all done, perform the first action from the
             // highest performing sequence of (affordable) actions:
             val bestRoute = lookaheadList.view
-                              .filterNot(_.curBalance < 0.0)
+                              .filterNot(_.curBalance < 0.0)  // i.e. "filterOUT()"
                               .maxBy(_.utility)
                               .actions.reverse
 
@@ -374,10 +372,16 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
             execute_action(bestRoute.head)
         }
-        else {
-            // fill in the next layer of branches and recurse
+        else { // fill in the next layer of branches and recurse
             var newLookaheadList = List[Lookahead]()
-            if (!lookaheadList.isEmpty) {
+            if (lookaheadList.isEmpty) { // create first layer of routes
+                newLookaheadList =
+                  go_deeper(
+                      new Lookahead(List[String](), state.f_Q, state.f_QPrime, 0, state.balance),
+                      newLookaheadList
+                  )
+            }
+            else {
                 // add layer to existing routes
                 for (route <- lookaheadList) {
                     if (route.actions.head != "submit")
@@ -385,12 +389,6 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
                     else newLookaheadList ::= route
                 }
             }
-            else newLookaheadList =
-                // create first layer of routes
-                go_deeper(
-                    new Lookahead(List[String](), state.f_Q, state.f_QPrime, 0, state.balance),
-                    newLookaheadList
-                )
             look_ahead(newLookaheadList, currentDepth + 1)
         }
     }
@@ -453,7 +451,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     }
 
     def dont_lookahead(): Boolean = {
-        val artifactUtility    = utility_of_submitting()
+        val estArtifactUtility = est_utility_of_submitting()
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
 
@@ -482,10 +480,10 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         }
 
         val doImprovement = (improvementUtility > voteUtility
-                            && improvementUtility > artifactUtility
+                            && improvementUtility > estArtifactUtility
                             && state.balance > exper.IMPROVEMENT_COST)
 
-        val doBallot      = (voteUtility > artifactUtility
+        val doBallot      = (voteUtility > estArtifactUtility
                             && state.balance > exper.BALLOT_COST)
 
         if (doImprovement) {
@@ -510,7 +508,7 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
 
     /* never chooses to submit until there isn't enough money left to do anything else */
     def dont_submit(): Boolean = {
-        val artifactUtility    = utility_of_submitting()
+        val artifactUtility    = est_utility_of_submitting()
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
 
