@@ -229,13 +229,13 @@ object SweepLookaheadDepth2 extends App with ExperimentRunner {
 }
 
 object SweepLookaheadDepth3 extends App with ExperimentRunner {
-    exper.LOOKAHEAD_DEPTH = 1
-    exper.NUM_QUESTIONS = 120
-    exper.WORKER_DIST = new NormalDistribution(5, 2)
+    exper.LOOKAHEAD_DEPTH = 0
+    exper.NUM_QUESTIONS = 125
+    exper.WORKER_DIST = new NormalDistribution(4, 2)
     var i = 0
     override def modifyConstants(): Unit = {
         i += 1
-        if (i % 30 == 0)
+        if (i % 25 == 0)
             exper.LOOKAHEAD_DEPTH += 1
     }
     run()

@@ -23,7 +23,7 @@ import scala.language.implicitConversions
 
 /* this is so one can choose a set of parameters by replacing this line with
  *  import SecondExperiment._  and so on  */
-import NoLookahead200Times._
+import SweepLookaheadDepth3._
 
 // implicitly add "normalize" to Array[Dbl] to make ||Array|| = 1
 abstract class addNorm(a: Array[Double]) { def normalize: Array[Double] }
@@ -360,7 +360,26 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     final def look_ahead(lookaheadList: List[Lookahead] = List[Lookahead](),
                          currentDepth:  Int = 0):
     Boolean = {
-        if (currentDepth == exper.LOOKAHEAD_DEPTH) {
+        if (currentDepth == 0) {
+            val estArtifactUtility = est_utility_of_submitting()
+            val voteUtility        = utility_of_voting()
+            val improvementUtility = utility_of_improvement_job()
+
+            val doImprovement = (improvementUtility > voteUtility
+              && improvementUtility > estArtifactUtility
+              && state.balance > exper.IMPROVEMENT_COST)
+
+            val doBallot      = (voteUtility > estArtifactUtility
+              && state.balance > exper.BALLOT_COST)
+
+            if (doImprovement)      printf("\nwould have improved")
+            else if (doBallot)      printf("\nwould have balloted")
+            else                    printf("\nwould have submitted")
+        }
+        if (exper.LOOKAHEAD_DEPTH == 0) {
+            dont_lookahead()
+        }
+        else if (currentDepth == exper.LOOKAHEAD_DEPTH) {
             // all done, perform the first action from the
             // highest performing sequence of (affordable) actions:
             val bestRoute = lookaheadList.view
@@ -451,12 +470,8 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
     }
 
     def dont_lookahead(): Boolean = {
-        val estArtifactUtility = est_utility_of_submitting()
-        val voteUtility        = utility_of_voting()
-        val improvementUtility = utility_of_improvement_job()
 
-
-        if (print) {
+        if (print) {  // print a bunch of stuff
             val eaq = state.f_Q.average
             val taq = state.alpha
             val eaqp = state.f_QPrime.average
@@ -470,14 +485,16 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             println(f"                 First Diff = ${fd}%.2f")
             println(f"                 Prime Diff = ${pd}%.2f")
             println(f" Avg Diff = ${(fd+pd)/2}%.2f")
-//            println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
-//            println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
 //            println(s"current balance:     ${state.balance}")
     //        println("artifactUtility:    " + artifactUtility)
     //        println("voteUtility:        " + voteUtility)
     //        println("improvementUtility: " + improvementUtility)
     //        println(qstn.f_Q.particles.mkString("\nParticles:\n(", ", ", ")\n"))
         }
+
+        val estArtifactUtility = est_utility_of_submitting()
+        val voteUtility        = utility_of_voting()
+        val improvementUtility = utility_of_improvement_job()
 
         val doImprovement = (improvementUtility > voteUtility
                             && improvementUtility > estArtifactUtility
@@ -512,6 +529,10 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
         val voteUtility        = utility_of_voting()
         val improvementUtility = utility_of_improvement_job()
 
+        val doImprovement = (improvementUtility > voteUtility
+                        && state.balance > exper.IMPROVEMENT_COST)
+        val doBallot = state.balance > exper.BALLOT_COST
+
         lazy val logString =
             f"RealUtility\t$getFinalUtility%.2f\t" +
             f"RealQuality\t${
@@ -529,10 +550,6 @@ case class Question(args: Set[String] = Set[String](), outFile: String = "test.t
             println(s"Predicted Original Utility:   ${expected_utility(state.f_Q)}")
             println(s"Predicted Prime Utility:      ${expected_utility(state.f_QPrime)}")
         }
-
-        val doImprovement = (improvementUtility > voteUtility
-                        && state.balance > exper.IMPROVEMENT_COST)
-        val doBallot = state.balance > exper.BALLOT_COST
 
         if (doImprovement) {
             ifPrintln("\n=> | IMPROVEMENT job |")
