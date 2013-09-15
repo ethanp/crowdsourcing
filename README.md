@@ -7,7 +7,7 @@ Crowdsourcing
 TurKontrol was presented in [Decision-Theoretic Control of Crowdsourced Workflows]
 (https://homes.cs.washington.edu/~mausam/papers/aaai10b.pdf)
 by Peng Dai, Mausam, and Daniel S. Weld.
-#####[The Associated Paper](https://www.dropbox.com/s/15uchy2615zg0x0/WeldParticle%20Paper%208-23.pdf)
+#####[The Associated Paper](https://www.dropbox.com/s/dhfedcdrzl2y8g3/turkpf%20bc%20no%20cpr.pdf)
 
 ##[GLAD](https://github.com/ethanp/crowdsourcing/tree/master/GLAD)
 *5/2013*
