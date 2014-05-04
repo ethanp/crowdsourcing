@@ -1,6 +1,6 @@
 ## TURKPF: TURKONTROL as a Particle Filter
 ##### by Ethan Petuchowski, supervised by Matthew Lease and Aashish Sheshadri
-##[Paper about TurKPF](https://www.dropbox.com/s/dhfedcdrzl2y8g3/turkpf%20bc%20no%20cpr.pdf)
+##[Paper about TurKPF](http://arxiv.org/abs/1404.5078)
 ####[Original Paper about TurKontrol:](https://homes.cs.washington.edu/~mausam/papers/aaai10b.pdf)
 ```
 "Decision-Theoretic Control of Crowd-Sourced Workflows"

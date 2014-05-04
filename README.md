@@ -4,10 +4,11 @@ Crowdsourcing
 ##[TurKPF](https://github.com/ethanp/crowdsourcing/tree/master/TurKPF)
 *6-8/2013*
 #####Scala implementation of TurKontrol, a POMDP; but converted into a particle filter
-TurKontrol was presented in [Decision-Theoretic Control of Crowdsourced Workflows]
-(https://homes.cs.washington.edu/~mausam/papers/aaai10b.pdf)
+
+###[The Associated Paper](http://arxiv.org/abs/1404.5078)
+
+TurKontrol was presented in [Decision-Theoretic Control of Crowdsourced Workflows](https://homes.cs.washington.edu/~mausam/papers/aaai10b.pdf)
 by Peng Dai, Mausam, and Daniel S. Weld.
-#####[The Associated Paper](https://www.dropbox.com/s/dhfedcdrzl2y8g3/turkpf%20bc%20no%20cpr.pdf)
 
 ##[GLAD](https://github.com/ethanp/crowdsourcing/tree/master/GLAD)
 *5/2013*
