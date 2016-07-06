@@ -1,7 +1,8 @@
 ## TURKPF: TURKONTROL as a Particle Filter
 ##### by Ethan Petuchowski, supervised by Matthew Lease and Aashish Sheshadri
-##[Paper about TurKPF](http://arxiv.org/abs/1404.5078)
-####[Original Paper about TurKontrol:](https://homes.cs.washington.edu/~mausam/papers/aaai10b.pdf)
+
+### [Find the Paper about TurKPF on arxiv](http://arxiv.org/abs/1404.5078)
+
 ```
 "Decision-Theoretic Control of Crowd-Sourced Workflows"
 by Peng Dai, Mausam, and Daniel S. Weld (2010).
@@ -32,3 +33,5 @@ name your desired speed. With the model specifics we used, as described in the
 tables, an action is always chosen in much less than one second, which is
 insignificant compared to the time it takes for a crowdworker to come across,
 accept, and complete a task.
+
+**[Link to the paper about TurKontrol on which this work is based](https://homes.cs.washington.edu/~mausam/papers/aaai10b.pdf)**
