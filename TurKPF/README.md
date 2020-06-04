@@ -7,14 +7,14 @@
 "Decision-Theoretic Control of Crowd-Sourced Workflows"
 by Peng Dai, Mausam, and Daniel S. Weld (2010).
 ```
-###Abstract
+### Abstract
 
 TURKONTROL, an algorithm presented in (Dai et al. 2010), uses a POMDP to model
 and control an iterative workflow for crowdsourced work. Here, TURKONTROL is
 implemented  using a Particle Filter to reduce the computation time & memory
 necessary to run it.
 
-###Conclusion
+### Conclusion
 
 **TURKPF is not fit for use in the real world.** One would have to use Machine
 Learning on *real data* to determine appropriate values and functions for all
